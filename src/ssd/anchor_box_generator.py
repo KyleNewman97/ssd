@@ -145,8 +145,8 @@ class AnchorBoxGenerator(nn.Module):
         feature_map_sizes: list[tuple[int, int]],
     ) -> Tensor:
         """
-        Generates anchor boxes for a batch of images. This assumes that all images in
-        the batch have the same size.
+        Generates anchor boxes for a batch of images (in image coordinates). This
+        assumes that all images in the batch have the same size.
 
         Parameters
         ----------
@@ -174,4 +174,4 @@ class AnchorBoxGenerator(nn.Module):
         for _ in range(batch_size):
             boxes.append((anchor_boxes * whwh).unsqueeze(0))
 
-        return torch.concat(boxes, dim=0)
+        return torch.cat(boxes, dim=0)

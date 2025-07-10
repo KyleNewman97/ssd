@@ -2,6 +2,7 @@ import torch
 
 from ssd import SSD
 from ssd.anchor_box_generator import AnchorBoxGenerator
+from ssd.structs import FrameLabels
 
 
 class TestSSD:
@@ -27,7 +28,7 @@ class TestSSD:
         image_size = (300, 300)
         feature_map_sizes = [(38, 38), (19, 19), (10, 10), (5, 5), (3, 3), (1, 1)]
         head_outputs = torch.rand(
-            (batch_size, 8732, 4 + num_classes), device=model.device
+            (batch_size, 8732, 4 + 1 + num_classes), device=model.device
         )
         anchors = AnchorBoxGenerator().forward(
             batch_size, image_size, feature_map_sizes

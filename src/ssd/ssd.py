@@ -1,11 +1,11 @@
 import torch
-
 from torch import nn, Tensor
-from torch.nn.functional import softmax
+from torch.nn.functional import cross_entropy, smooth_l1_loss, softmax
 
 from ssd.anchor_box_generator import AnchorBoxGenerator
 from ssd.ssd_backbone import SSDBackbone
-from ssd.structs import FrameDetections
+from ssd.structs import FrameDetections, FrameLabels, Losses
+from ssd.utils import BoxUtils
 
 
 class SSD(nn.Module):
@@ -20,25 +20,19 @@ class SSD(nn.Module):
 
         # Construct the heads for each of the output feature layers
         # The number of output channels is equal to:
-        #   num_anchors * (num_classes + 4)
-        # where 4 is the number of points needed to define a bounding box
-        self.head4_3 = nn.Conv2d(
-            512, 4 * (self.num_classes + 4), kernel_size=3, padding=1
-        )
-        self.head7 = nn.Conv2d(
-            1024, 6 * (self.num_classes + 4), kernel_size=3, padding=1
-        )
-        self.head8_2 = nn.Conv2d(
-            512, 6 * (self.num_classes + 4), kernel_size=3, padding=1
-        )
-        self.head9_2 = nn.Conv2d(
-            256, 6 * (self.num_classes + 4), kernel_size=3, padding=1
-        )
+        #   num_anchors * (num_classes + 1 + 4)
+        # we add 1 above to include a background class. 4 is the number of points needed
+        # to define a bounding box
+        self.minor_dim_size = self.num_classes + 1 + 4
+        self.head4_3 = nn.Conv2d(512, 4 * self.minor_dim_size, kernel_size=3, padding=1)
+        self.head7 = nn.Conv2d(1024, 6 * self.minor_dim_size, kernel_size=3, padding=1)
+        self.head8_2 = nn.Conv2d(512, 6 * self.minor_dim_size, kernel_size=3, padding=1)
+        self.head9_2 = nn.Conv2d(256, 6 * self.minor_dim_size, kernel_size=3, padding=1)
         self.head10_2 = nn.Conv2d(
-            256, 4 * (self.num_classes + 4), kernel_size=3, padding=1
+            256, 4 * self.minor_dim_size, kernel_size=3, padding=1
         )
         self.head11_2 = nn.Conv2d(
-            256, 4 * (self.num_classes + 4), kernel_size=3, padding=1
+            256, 4 * self.minor_dim_size, kernel_size=3, padding=1
         )
 
         self.to(self.device)
@@ -55,24 +49,11 @@ class SSD(nn.Module):
         box_regressions = head_outputs[..., :4]
         class_probs = softmax(head_outputs[..., 4:], dim=-1)
 
-        # Extract the "deltas" predicted by the model to the anchor boxes
-        dx = box_regressions[..., 0]
-        dy = box_regressions[..., 1]
-        dw = box_regressions[..., 2]
-        dh = box_regressions[..., 3]
+        # Remove the background class
+        class_probs = class_probs[..., 1:]
 
-        # Extract the components of the anchor boxes
-        anchor_cxs = anchors[..., 0]
-        anchor_cys = anchors[..., 1]
-        anchor_ws = anchors[..., 2]
-        anchor_hs = anchors[..., 3]
-
-        # Calculate the predicted boxes in pixel coordinates
-        pred_cx = dx * anchor_ws + anchor_cxs
-        pred_cy = dy * anchor_hs + anchor_cys
-        pred_w = torch.exp(dw) * anchor_ws
-        pred_h = torch.exp(dh) * anchor_hs
-        boxes = torch.stack((pred_cx, pred_cy, pred_w, pred_h), dim=2)
+        # Convert the regressed boxes into the image domain
+        boxes = BoxUtils.regression_domain_to_image_domain(box_regressions, anchors)
 
         # Find the top-k best detections for each frame/image
         frame_detections: list[FrameDetections] = []
@@ -103,7 +84,74 @@ class SSD(nn.Module):
 
         return frame_detections
 
-    def forward(self, images: Tensor, confidence_threshold: float = 0.5) -> Tensor:
+    def compute_loss(
+        self, head_outputs: Tensor, anchors: Tensor, labels: list[FrameLabels]
+    ) -> Losses:
+        """ """
+
+        # Determine which anchor boxes have the highest IoU with the labels
+        gt_boxes_image_domain = [l.boxes for l in labels]
+        best_anchor_indices = BoxUtils.find_indices_of_best_anchor_boxes(
+            anchors, gt_boxes_image_domain
+        )
+
+        # Extract the predicted boxes (in regression domain) and class logits
+        boxes_regression_domain = head_outputs[..., :4]
+        class_logits = head_outputs[..., 4:]
+
+        # Loop through each image and calculate the box loss
+        box_loss_list: list[Tensor] = []
+        for (
+            image_boxes_regression_domain,
+            image_best_anchor_indices,
+            image_labels,
+        ) in zip(boxes_regression_domain, best_anchor_indices, labels):
+            # Find the predicted boxes in the regression domain
+            matched_boxes_regression_domain = image_boxes_regression_domain.gather(
+                dim=1, index=image_best_anchor_indices
+            )
+
+            # Convert the ground truth boxes to the regression domain
+            gt_boxes_image_domain = image_labels.boxes
+            gt_boxes_regression_domain = BoxUtils.image_domain_to_regression_domain(
+                gt_boxes_image_domain, anchors
+            )
+
+            # Calculate the box loss
+            box_loss_list.append(
+                smooth_l1_loss(
+                    matched_boxes_regression_domain,
+                    gt_boxes_regression_domain,
+                    reduction="sum",
+                )
+            )
+        box_loss = torch.stack(box_loss_list, dim=0)
+
+        # Calculate the classification loss
+        total_num_objects = 0
+        gt_classes_list: list[Tensor] = []
+        for image_class_logits, image_best_anchor_indices, image_labels in zip(
+            class_logits, best_anchor_indices, labels
+        ):
+            # Set the label for each anchor box
+            image_gt_classes = torch.zeros(
+                (image_class_logits.shape[0],),
+                device=self.device,
+                dtype=image_class_logits.dtype,
+            )
+            image_gt_classes[image_best_anchor_indices] = image_labels.labels
+            total_num_objects += image_labels.labels.numel()
+
+            gt_classes_list.append(image_gt_classes)
+        gt_classes = torch.stack(gt_classes_list, dim=0)
+
+        # Calculate classification loss
+        class_loss = cross_entropy(class_logits, gt_classes, reduction="none")
+
+        N = max(1, total_num_objects)
+        return Losses(box_loss=box_loss.sum() / N, class_loss=class_loss.sum() / N)
+
+    def forward(self, images: Tensor) -> tuple[Tensor, Tensor]:
         # Pass through the backbone and get feature maps from various layers
         feature_maps = self.backbone.forward(images)
 
@@ -122,14 +170,14 @@ class SSD(nn.Module):
 
         # Convert each head out from (N, A * K, H, W) to (N, HWA, K)
         # Afterwards concatenate all head outputs along the second dimension
-        K = self.num_classes + 4
+        K = self.minor_dim_size
         for idx, head_output in enumerate(head_outputs):
             N, _, H, W = head_output.shape
             head_output = head_output.view(N, -1, K, H, W)
             head_output = head_output.permute(0, 3, 4, 1, 2)
             head_output = head_output.reshape(N, -1, K)
             head_outputs[idx] = head_output
-        head_outputs = torch.concat(head_outputs, dim=1)
+        head_outputs = torch.cat(head_outputs, dim=1)
 
         # Create the anchor boxes
         batch_size = images.shape[0]
@@ -138,4 +186,12 @@ class SSD(nn.Module):
             batch_size, image_size, feature_map_sizes
         )
 
-        return head_outputs
+        return head_outputs, anchors
+
+    def infer(
+        self, images: Tensor, confidence_threshold: float = 0.5, num_top_k: int = 100
+    ) -> list[FrameDetections]:
+        head_outputs, anchors = self.forward(images)
+        return self._post_process_detections(
+            head_outputs, anchors, confidence_threshold, num_top_k
+        )
