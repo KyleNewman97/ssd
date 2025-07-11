@@ -13,7 +13,7 @@ class SSDBackbone(nn.Module):
         # Ensure to remove the last MaxPool layer from VGG16s feature layers
         vgg = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_FEATURES)
         vgg_features: nn.Sequential = vgg.features  # type: ignore
-        vgg_features = vgg_features[:-1]
+        vgg_features = vgg_features[:-1].to(device=self.device)
 
         # Find the indices of the max pool layers
         maxpool_1_idx, maxpool_2_idx, maxpool_3_idx, maxpool_4_idx = [

@@ -10,14 +10,14 @@ class TestAnchorBoxGenerator:
         """
         Test that we can initialise the AnchorBoxGenerator.
         """
-        anchor_generator = AnchorBoxGenerator(torch.float32)
+        anchor_generator = AnchorBoxGenerator(torch.device("cpu"), torch.float32)
         assert isinstance(anchor_generator, AnchorBoxGenerator)
 
     def test_generate_wh_pairs(self):
         """
         Test that we can generate the width-height pairs for the anchor boxes.
         """
-        anchor_generator = AnchorBoxGenerator(torch.float32)
+        anchor_generator = AnchorBoxGenerator(torch.device("cpu"), torch.float32)
         wh_pairs = anchor_generator._generate_wh_pairs()
 
         assert len(wh_pairs) == anchor_generator.num_feature_maps
@@ -46,7 +46,7 @@ class TestAnchorBoxGenerator:
         feature_map_sizes = [(38, 38), (19, 19), (10, 10), (5, 5), (3, 3), (1, 1)]
         dtype = torch.float32
 
-        anchor_generator = AnchorBoxGenerator(dtype)
+        anchor_generator = AnchorBoxGenerator(torch.device("cpu"), dtype)
         boxes = anchor_generator._generate_anchor_boxes(feature_map_sizes)
 
         assert isinstance(boxes, torch.Tensor)
@@ -67,12 +67,11 @@ class TestAnchorBoxGenerator:
         Test that we can run forward inference on anchor box generation.
         """
         batch_size = 8
-        image_size = (300, 400)
         feature_map_sizes = [(38, 38), (19, 19), (10, 10), (5, 5), (3, 3), (1, 1)]
         dtype = torch.float32
 
-        anchor_generator = AnchorBoxGenerator(dtype)
-        boxes = anchor_generator.forward(batch_size, image_size, feature_map_sizes)
+        anchor_generator = AnchorBoxGenerator(torch.device("cpu"), dtype)
+        boxes = anchor_generator.forward(batch_size, feature_map_sizes)
 
         # Calculate the expected number of anchor boxes
         expected_boxes = self._calculate_num_expected_anchor_boxes(
@@ -83,5 +82,5 @@ class TestAnchorBoxGenerator:
 
         # Ensure the anchor box centroids are within the bounds of the image
         image_boxes = boxes[0]
-        assert 0 < image_boxes[:, 0].min() and image_boxes[:, 0].max() < image_size[1]
-        assert 0 < image_boxes[:, 1].min() and image_boxes[:, 1].max() < image_size[0]
+        assert 0 < image_boxes[:, 0].min() and image_boxes[:, 0].max() < 1
+        assert 0 < image_boxes[:, 1].min() and image_boxes[:, 1].max() < 1

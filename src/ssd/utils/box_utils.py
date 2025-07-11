@@ -61,7 +61,7 @@ class BoxUtils:
         pred_w = torch.exp(dw) * anchor_ws
         pred_h = torch.exp(dh) * anchor_hs
 
-        return torch.stack((pred_cx, pred_cy, pred_w, pred_h), dim=2)
+        return torch.stack((pred_cx, pred_cy, pred_w, pred_h), dim=-1)
 
     @staticmethod
     def image_domain_to_regression_domain(boxes: Tensor, anchors: Tensor) -> Tensor:
@@ -115,7 +115,7 @@ class BoxUtils:
         dw = torch.log(w / anchor_w)
         dh = torch.log(h / anchor_h)
 
-        return torch.stack((dx, dy, dw, dh), dim=2)
+        return torch.stack((dx, dy, dw, dh), dim=-1)
 
     @staticmethod
     def find_indices_of_best_anchor_boxes(

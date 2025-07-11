@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 import pytest
+import torch
 import numpy as np
 from PIL import Image
 from torch import Tensor
@@ -26,7 +27,11 @@ class TestSSDDataset:
 
         self.temp_dir.cleanup()
 
-    def test_init_valid_dataset(self):
+    @pytest.fixture(autouse=True)
+    def device(self) -> torch.device:
+        return torch.device("cpu")
+
+    def test_init_valid_dataset(self, device: torch.device):
         """
         Test that we keep all valid samples when initialising the dataset.
         """
@@ -42,11 +47,13 @@ class TestSSDDataset:
 
         # Try to initialise the dataset
         transform = LetterboxTransform()
-        dataset = SSDDataset(self.images_path, self.labels_path, 2, transform)
+        dataset = SSDDataset(
+            self.images_path, self.labels_path, 2, transform, device, torch.float32
+        )
         assert isinstance(dataset, SSDDataset)
         assert len(dataset) == 1
 
-    def test_init_missing_label(self):
+    def test_init_missing_label(self, device: torch.device):
         """
         Test that we remove samples when we are missing the label.
         """
@@ -59,11 +66,13 @@ class TestSSDDataset:
 
         # Try to initialise the dataset
         transform = LetterboxTransform()
-        dataset = SSDDataset(self.images_path, self.labels_path, 2, transform)
+        dataset = SSDDataset(
+            self.images_path, self.labels_path, 2, transform, device, torch.float32
+        )
         assert isinstance(dataset, SSDDataset)
         assert len(dataset) == 0
 
-    def test_init_invalid_label_num_elements(self):
+    def test_init_invalid_label_num_elements(self, device: torch.device):
         """
         Test that we remove samples that contain label rows with not enough elements.
         """
@@ -79,11 +88,13 @@ class TestSSDDataset:
 
         # Try to initialise the dataset
         transform = LetterboxTransform()
-        dataset = SSDDataset(self.images_path, self.labels_path, 2, transform)
+        dataset = SSDDataset(
+            self.images_path, self.labels_path, 2, transform, device, torch.float32
+        )
         assert isinstance(dataset, SSDDataset)
         assert len(dataset) == 0
 
-    def test_init_invalid_label_class(self):
+    def test_init_invalid_label_class(self, device: torch.device):
         """
         Test that we remove samples that contain an invalid class ID.
         """
@@ -99,11 +110,13 @@ class TestSSDDataset:
 
         # Try to initialise the dataset
         transform = LetterboxTransform()
-        dataset = SSDDataset(self.images_path, self.labels_path, 2, transform)
+        dataset = SSDDataset(
+            self.images_path, self.labels_path, 2, transform, device, torch.float32
+        )
         assert isinstance(dataset, SSDDataset)
         assert len(dataset) == 0
 
-    def test_init_invalid_label_box(self):
+    def test_init_invalid_label_box(self, device: torch.device):
         """
         Test that we remove samples that contain an invalid box.
         """
@@ -119,11 +132,13 @@ class TestSSDDataset:
 
         # Try to initialise the dataset
         transform = LetterboxTransform()
-        dataset = SSDDataset(self.images_path, self.labels_path, 2, transform)
+        dataset = SSDDataset(
+            self.images_path, self.labels_path, 2, transform, device, torch.float32
+        )
         assert isinstance(dataset, SSDDataset)
         assert len(dataset) == 0
 
-    def test_read_label_file(self):
+    def test_read_label_file(self, device: torch.device):
         """
         Test that we can read in a valid label file.
         """
@@ -134,20 +149,23 @@ class TestSSDDataset:
                 fp.write("0 0.5358 0.4942 0.3483 0.7085\n1 0.2 0.4 0.02 0.08\n")
 
             # Try to read in the labels
-            labels = SSDDataset.read_label_file(file)
+            labels = SSDDataset.read_label_file(file, device, torch.float32)
 
         # Check the contents is correct
+        assert labels.device == device
         assert labels.shape == (2, 5)
 
-    def test_test_get_item(self):
+    def test_get_item(self, device: torch.device):
         """
         Test that we can get an item from the dataset.
         """
+        dtype = torch.float32
 
         # Make a single image file and label file that are valid
         uuid = f"{uuid4()}"
 
-        im = Image.fromarray(np.zeros((320, 320, 3), dtype=np.uint8))
+        im_data = np.random.randint(0, 255, (320, 320, 3)).astype(np.uint8)
+        im = Image.fromarray(im_data)
         im.save(self.images_path / f"{uuid}.png")
 
         with open(self.labels_path / f"{uuid}.txt", "w") as fp:
@@ -156,12 +174,25 @@ class TestSSDDataset:
         # Try to get a sample from the dataset
         num_classes = 2
         height, width = 256, 512
-        transform = LetterboxTransform(height=height, width=width)
-        dataset = SSDDataset(self.images_path, self.labels_path, num_classes, transform)
+        transform = LetterboxTransform(height=height, width=width, dtype=dtype)
+        dataset = SSDDataset(
+            self.images_path,
+            self.labels_path,
+            num_classes,
+            transform,
+            device,
+            torch.float32,
+        )
         image, label = dataset[0]
 
         # Check the output shapes are correct
         assert isinstance(image, Tensor)
+        assert image.device == device
+        assert image.dtype == dtype
         assert image.shape == (3, height, width)
+        assert 0 <= image.min() <= 1
+        assert 0 <= image.max() <= 1
         assert isinstance(label, Tensor)
+        assert label.device == device
+        assert label.dtype == dtype
         assert label.shape == (1, 5)

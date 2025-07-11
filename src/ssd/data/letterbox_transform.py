@@ -11,7 +11,9 @@ class LetterboxTransform(nn.Module):
         self.desired_height = height
         self.dtype = dtype
 
-    def __call__(self, image: Tensor, objects: Tensor) -> tuple[Tensor, Tensor]:
+    def __call__(
+        self, image: Tensor, objects: Tensor, device: torch.device
+    ) -> tuple[Tensor, Tensor]:
         """
         Applies the letterbox transform to both the image and the objects.
 
@@ -25,6 +27,9 @@ class LetterboxTransform(nn.Module):
             structured as `(num_objects, 5)`. With the last dimension containing the
             following: `(class_id, cx, cy, w, h)`. The bounding box is defined in
             normalised space (betweem 0 and 1).
+
+        device:
+            The device to put place the data onto.
 
         Returns
         -------
@@ -59,7 +64,7 @@ class LetterboxTransform(nn.Module):
 
         # Create the output image
         desired_shape = (image.shape[0], self.desired_height, self.desired_width)
-        output_image = torch.zeros(desired_shape, dtype=self.dtype)
+        output_image = torch.zeros(desired_shape, dtype=self.dtype, device=device)
         output_image[:, y_start:y_end, x_start:x_end] = resized_image
 
         # Adjust the object positions

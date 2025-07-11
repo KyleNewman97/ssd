@@ -12,11 +12,6 @@ if __name__ == "__main__":
     batch_tensor = image_tensor[None, :, :, :]
     batch_tensor /= 255
 
-    print("Image size:", image_tensor.shape)
-    print("Batch size:", batch_tensor.shape)
-
     model = SSD(num_classes=2)
-    print(model)
 
     result = model.forward(batch_tensor)
-    print(result.shape)

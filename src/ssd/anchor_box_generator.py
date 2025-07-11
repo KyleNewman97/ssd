@@ -5,10 +5,10 @@ from torch import nn, Tensor
 
 
 class AnchorBoxGenerator(nn.Module):
-    def __init__(self, dtype: torch.dtype = torch.float32):
+    def __init__(self, device: torch.device, dtype: torch.dtype = torch.float32):
         nn.Module.__init__(self)
 
-        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        self.device = device
         self.dtype = dtype
 
         s_min = 0.2
@@ -141,20 +141,15 @@ class AnchorBoxGenerator(nn.Module):
     def forward(
         self,
         batch_size: int,
-        image_size: tuple[int, int],
         feature_map_sizes: list[tuple[int, int]],
     ) -> Tensor:
         """
-        Generates anchor boxes for a batch of images (in image coordinates). This
-        assumes that all images in the batch have the same size.
+        Generates anchor boxes for a batch of images (in normalised coordinates).
 
         Parameters
         ----------
         batch_size:
             The number of images in the batch.
-
-        image_size:
-            The size of each image in the batch. This is structured as `(h, w)`.
 
         feature_map_sizes:
             A collection of sizes. Each size is structured as `(h, w)`. These are the
@@ -164,14 +159,8 @@ class AnchorBoxGenerator(nn.Module):
         -------
         boxes:
             A tensor containing the anchor boxes for all images. The anchor boxes are
-            defined as `(c_x, c_y, w, h)` in image coordinates.
+            defined as `(c_x, c_y, w, h)` in normalised coordinates.
         """
-        wh_list = [image_size[1], image_size[0]]
-        whwh = torch.tensor(wh_list + wh_list, device=self.device, dtype=self.dtype)
+
         anchor_boxes = self._generate_anchor_boxes(feature_map_sizes)
-
-        boxes: list[Tensor] = []
-        for _ in range(batch_size):
-            boxes.append((anchor_boxes * whwh).unsqueeze(0))
-
-        return torch.cat(boxes, dim=0)
+        return anchor_boxes.unsqueeze(0).repeat((batch_size, 1, 1))

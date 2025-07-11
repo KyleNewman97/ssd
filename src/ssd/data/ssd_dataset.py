@@ -17,6 +17,8 @@ class SSDDataset(Dataset, MetaLogger):
         labels_path: Path,
         num_classes: int,
         transform: LetterboxTransform | None,
+        device: torch.device,
+        dtype: torch.dtype,
     ):
         """
         Parameters
@@ -32,6 +34,12 @@ class SSDDataset(Dataset, MetaLogger):
 
         transform:
             The transform to apply to the images after they are loaded in.
+
+        device:
+            The device that the tensors should be stored on.
+
+        dtype:
+            The type of the numbers stored in the returned tensors.
         """
         Dataset.__init__(self)
         MetaLogger.__init__(self)
@@ -40,6 +48,8 @@ class SSDDataset(Dataset, MetaLogger):
         self.labels_path = labels_path
         self.num_classes = num_classes
         self.transform = transform
+        self.device = device
+        self.dtype = dtype
 
         self.logger.info(f"Images path: {images_path}")
         self.logger.info(f"Labels path: {labels_path}")
@@ -124,7 +134,7 @@ class SSDDataset(Dataset, MetaLogger):
         return filtered_samples
 
     @staticmethod
-    def read_label_file(file: Path) -> Tensor:
+    def read_label_file(file: Path, device: torch.device, dtype: torch.dtype) -> Tensor:
         """
         Reads in a label file and returns a tensor of the objects contained in it.
 
@@ -142,6 +152,12 @@ class SSDDataset(Dataset, MetaLogger):
             Where the box coords should be defined in the normalised image space
             (between 0 and 1).
 
+        device:
+            The device to load the data onto.
+
+        dtype:
+            The type of the numbers stored in the returned tensors.
+
         Returns
         -------
         objects:
@@ -149,6 +165,9 @@ class SSDDataset(Dataset, MetaLogger):
             of `(num_objects, 5)` and will have the elements ordered as:
 
             `(class_id, cx, cy, w, h)`
+
+            It should be noted that if there are `x` classes then these classes will
+            have class_ids of 1 to `x`, because `0` is assumed as the background class.
         """
         # Load in the labels
         with open(file, "r") as fp:
@@ -161,7 +180,7 @@ class SSDDataset(Dataset, MetaLogger):
                 if len(elements) != 5:
                     continue
 
-                class_id = int(elements[0])
+                class_id = int(elements[0]) + 1
                 center_x = float(elements[1])
                 center_y = float(elements[2])
                 width = float(elements[3])
@@ -169,9 +188,9 @@ class SSDDataset(Dataset, MetaLogger):
                 labels.append((class_id, center_x, center_y, width, height))
 
         # Put the labels into a tensor
-        label_tensor = torch.zeros((len(labels), 5), dtype=torch.float32)
+        label_tensor = torch.zeros((len(labels), 5), dtype=dtype, device=device)
         for idx, label in enumerate(labels):
-            label_tensor[idx, :] = torch.tensor(label)
+            label_tensor[idx, :] = torch.tensor(label, dtype=dtype, device=device)
 
         return label_tensor
 
@@ -183,10 +202,17 @@ class SSDDataset(Dataset, MetaLogger):
 
         # Load in the image and pre-process it
         pil_image = Image.open(image_file)
-        image = pil_to_tensor(pil_image)
-        objects = SSDDataset.read_label_file(label_file)
+        image = pil_to_tensor(pil_image).to(device=self.device, dtype=self.dtype)
+        objects = SSDDataset.read_label_file(label_file, self.device, self.dtype)
+
+        # Normalise the image
+        image /= 255
+
+        # If the image is gray scale repeat the first dimension
+        if image.shape[0] == 1:
+            image = image.repeat((3, 1, 1))
 
         if self.transform is None:
             return image, objects
         else:
-            return self.transform(image, objects)
+            return self.transform(image, objects, self.device)
