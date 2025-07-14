@@ -25,7 +25,19 @@ class AnchorBoxGenerator(nn.Module):
         self.scales.append(1.0)
 
         # Define the anchor box aspect ratios to use for each feature map
-        self.aspect_ratios = [
+        self.aspect_ratios = self._generate_aspect_ratios()
+
+        self._wh_pairs = self._generate_wh_pairs()
+
+    def set_device(self, device: torch.device):
+        self.device = device
+        self.aspect_ratios = self._generate_aspect_ratios()
+        self._wh_pairs = self._generate_wh_pairs()
+        self.to(device)
+
+    def _generate_aspect_ratios(self) -> list[Tensor]:
+        dtype = self.dtype
+        return [
             torch.tensor([1, 1, 2, 1 / 2], dtype=dtype, device=self.device),
             torch.tensor([1, 1, 2, 3, 1 / 2, 1 / 3], dtype=dtype, device=self.device),
             torch.tensor([1, 1, 2, 3, 1 / 2, 1 / 3], dtype=dtype, device=self.device),
@@ -33,8 +45,6 @@ class AnchorBoxGenerator(nn.Module):
             torch.tensor([1, 1, 2, 1 / 2], dtype=dtype, device=self.device),
             torch.tensor([1, 1, 2, 1 / 2], dtype=dtype, device=self.device),
         ]
-
-        self._wh_pairs = self._generate_wh_pairs()
 
     def _generate_wh_pairs(self) -> list[Tensor]:
         """

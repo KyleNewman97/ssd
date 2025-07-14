@@ -6,6 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class TrainConfig(BaseModel):
     num_epochs: int
+    log_dir: Path
+    anchor_iou_threshold: float = Field(
+        default=0.1,
+        description=(
+            "The IoU threshold at which an anchor is considered to match a GT box."
+        ),
+    )
 
     batch_size: int = Field(default=32)
 
@@ -13,6 +20,9 @@ class TrainConfig(BaseModel):
     lr0: float = Field(default=1e-3, description="Initial learning rate")
     momentum: float = Field(default=0.9)
     weight_decay: float = Field(default=5e-4)
+
+    # Loss parameters
+    box_loss_scaling_factor: float = Field(default=6)
 
     # Dataset parameters
     num_classes: int

@@ -5,7 +5,7 @@ description = "Re-implementation of the SSD network."
 authors = [
     {name = "KyleNewman97", email = "kyle@thenewmans.com.au"},
 ]
-dependencies = ["torch>=2.7.1", "torchvision>=0.22.1", "notebook>=7.4.3", "pydantic>=2.11.7", "matplotlib>=3.10.3", "opencv-python>=4.11.0.86", "tqdm>=4.67.1"]
+dependencies = ["torch>=2.7.1", "torchvision>=0.22.1", "notebook>=7.4.3", "pydantic>=2.11.7", "matplotlib>=3.10.3", "opencv-python>=4.11.0.86", "tqdm>=4.67.1", "tensorboard>=2.19.0", "torch-tb-profiler>=0.4.3", "torchmetrics>=1.7.4", "pycocotools>=2.0.10"]
 requires-python = ">=3.11"
 readme = "README.md"
 license = {text = "MIT"}

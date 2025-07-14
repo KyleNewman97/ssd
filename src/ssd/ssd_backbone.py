@@ -4,16 +4,16 @@ from torchvision import models
 
 
 class SSDBackbone(nn.Module):
-    def __init__(self):
+    def __init__(self, device: torch.device):
         nn.Module.__init__(self)
 
-        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        self.device = device
 
         # SSD uses VGG16 in its backbone
         # Ensure to remove the last MaxPool layer from VGG16s feature layers
         vgg = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_FEATURES)
         vgg_features: nn.Sequential = vgg.features  # type: ignore
-        vgg_features = vgg_features[:-1].to(device=self.device)
+        vgg_features = vgg_features[:-1]
 
         # Find the indices of the max pool layers
         maxpool_1_idx, maxpool_2_idx, maxpool_3_idx, maxpool_4_idx = [
@@ -67,6 +67,10 @@ class SSDBackbone(nn.Module):
         )
 
         self.to(self.device)
+
+    def set_device(self, device: torch.device):
+        self.device = device
+        self.to(device)
 
     def forward(
         self, x: Tensor

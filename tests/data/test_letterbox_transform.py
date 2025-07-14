@@ -55,7 +55,7 @@ class TestLetterboxTransform:
         assert out_image.equal(expected_image)
 
         # Ensure the adjusted objects are correct
-        expected_objs = torch.tensor([[0.0000, 0.5358, 0.4950, 0.3483, 0.4038]])
+        expected_objs = torch.tensor([[1.0000, 0.5358, 0.4950, 0.3483, 0.4038]])
         assert out_objects.allclose(expected_objs, rtol=0.001)
         assert out_objects.device == device
         assert out_objects.dtype == dtype

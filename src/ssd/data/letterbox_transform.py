@@ -1,4 +1,5 @@
 import torch
+from pydantic import BaseModel
 from torch import nn, Tensor
 from torchvision.transforms.functional import resize
 
@@ -10,6 +11,69 @@ class LetterboxTransform(nn.Module):
         self.desired_width = width
         self.desired_height = height
         self.dtype = dtype
+
+    def _calculate_transform_params(self, image_width: int, image_height: int):
+        desired_wh_ratio = self.desired_width / self.desired_height
+        image_wh_ratio = image_width / image_height
+
+        # Find the new width and height of the image after resizing it to fit into the
+        # desired width and height - without loosing the aspect ratio
+        if desired_wh_ratio <= image_wh_ratio:
+            # Find the dimensions when we are bound by the width
+            new_width = self.desired_width
+            new_height = int(new_width / image_wh_ratio)
+        else:
+            # Find the dimensions when we are bound by the height
+            new_height = self.desired_height
+            new_width = int(new_height * image_wh_ratio)
+
+        # Determine x and y start and ends
+        x_start = (self.desired_width - new_width) // 2
+        x_end = x_start + new_width
+        y_start = (self.desired_height - new_height) // 2
+        y_end = y_start + new_height
+
+        return TransformParams(
+            desired_wh_ratio=desired_wh_ratio,
+            image_wh_ratio=image_wh_ratio,
+            new_width=new_width,
+            new_height=new_height,
+            x_start=x_start,
+            x_end=x_end,
+            y_start=y_start,
+            y_end=y_end,
+        )
+
+    def transform_image(self, image: Tensor, device: torch.device) -> Tensor:
+        params = self._calculate_transform_params(image.shape[2], image.shape[1])
+
+        # Create the output image
+        resized_image = resize(image, [params.new_height, params.new_width])
+        desired_shape = (image.shape[0], self.desired_height, self.desired_width)
+        output_image = torch.zeros(desired_shape, dtype=self.dtype, device=device)
+        output_image[
+            :, params.y_start : params.y_end, params.x_start : params.x_end
+        ] = resized_image
+
+        return output_image
+
+    def transform_objects(
+        self, objects: Tensor, image_width: int, image_height: int
+    ) -> Tensor:
+        params = self._calculate_transform_params(image_width, image_height)
+
+        # Adjust the object positions
+        out_objects = objects.clone()
+        if params.desired_wh_ratio <= params.image_wh_ratio:
+            # When bound by the width adjust the y values
+            out_objects[:, 2::2] *= params.new_height / self.desired_height
+            out_objects[:, 2] += params.y_start / self.desired_height
+        else:
+            # When bound by the height adjust the x values
+            out_objects[:, 1::2] *= params.new_width / self.desired_width
+            out_objects[:, 1] += params.y_end / self.desired_width
+
+        return out_objects
 
     def __call__(
         self, image: Tensor, objects: Tensor, device: torch.device
@@ -37,45 +101,23 @@ class LetterboxTransform(nn.Module):
             A letterboxed version of the original input image. This will have a shape of
             `(channels, desired_height, desired_width)`.
 
-        objects:
+        out_objects:
             A letterboxed version of the original objects. This will have the same shape
             as the input objects: `(num_objects, 5)`.
         """
-        desired_wh_ratio = self.desired_width / self.desired_height
-        image_wh_ratio = image.shape[2] / image.shape[1]
 
-        # Find the new width and height of the image after resizing it to fit into the
-        # desired width and height - without loosing the aspect ratio
-        if desired_wh_ratio <= image_wh_ratio:
-            # Find the dimensions when we are bound by the width
-            new_width = self.desired_width
-            new_height = int(new_width / image_wh_ratio)
-        else:
-            # Find the dimensions when we are bound by the height
-            new_height = self.desired_height
-            new_width = int(new_height * image_wh_ratio)
-        resized_image = resize(image, [new_height, new_width])
+        letterbox_image = self.transform_image(image, device)
+        letterbox_objs = self.transform_objects(objects, image.shape[2], image.shape[1])
 
-        # Determine x and y start and ends
-        x_start = (self.desired_width - new_width) // 2
-        x_end = x_start + new_width
-        y_start = (self.desired_height - new_height) // 2
-        y_end = y_start + new_height
+        return letterbox_image, letterbox_objs
 
-        # Create the output image
-        desired_shape = (image.shape[0], self.desired_height, self.desired_width)
-        output_image = torch.zeros(desired_shape, dtype=self.dtype, device=device)
-        output_image[:, y_start:y_end, x_start:x_end] = resized_image
 
-        # Adjust the object positions
-        out_objects = objects.clone()
-        if desired_wh_ratio <= image_wh_ratio:
-            # When bound by the width adjust the y values
-            out_objects[:, 2::2] *= new_height / self.desired_height
-            out_objects[:, 2] += y_start / self.desired_height
-        else:
-            # When bound by the height adjust the x values
-            out_objects[:, 1::2] *= new_width / self.desired_width
-            out_objects[:, 1] += x_start / self.desired_width
-
-        return output_image, out_objects
+class TransformParams(BaseModel):
+    desired_wh_ratio: float
+    image_wh_ratio: float
+    new_width: int
+    new_height: int
+    x_start: int
+    x_end: int
+    y_start: int
+    y_end: int

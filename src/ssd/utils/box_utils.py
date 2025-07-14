@@ -1,6 +1,6 @@
 import torch
 from torch import Tensor
-from torchvision.ops import box_convert, box_iou
+from torchvision.ops import box_convert, box_iou, nms
 
 from ssd.structs import FrameLabels
 
@@ -167,3 +167,115 @@ class BoxUtils:
             best_anchor_indices.append(iou_matrix.max(dim=0).indices)
 
         return best_anchor_indices
+
+    @staticmethod
+    def find_indices_of_high_iou_anchors(
+        anchors: Tensor, ground_truth_boxes: list[Tensor], iou_threshold: float
+    ) -> tuple[list[Tensor], list[Tensor]]:
+        """
+        Finds the indices of anchor boxes that have an IoU over the threshold with the
+        ground truth boxes.
+
+        Parameters
+        ----------
+        anchors:
+            The anchor boxes for the network. This should have a shape of `(batch_size,
+            num_anchor_boxes, 4)`. The last dimensions should be structured as `(cx, cy,
+            w, h)`. The anchor boxes should be in the image's domain.
+
+        ground_truth_boxes:
+            The ground truth boxes associated with each image. These boxes are in the
+            image's domain. The number of elements in the list is equal to `batch_size`
+            and the size of the tensor is `(num_objects, 4)`. With the last dimension
+            being structured as `(cx, cy, w, h)`.
+
+        iou_threshold:
+            The IoU threshold over which an anchor box will be considered a "match" to
+            the ground truth box.
+
+        Returns
+        -------
+        matching_anchor_indicies:
+            The indicies of the anchor boxes that match the ground truth boxes. The
+            number of elements in the list is `batch_size` with the tensor having shape
+            `(num_matching,)`.
+
+        matching_gt_indicies:
+            The indicies of the ground truth boxes that correspond to the matched anchor
+            boxes. We need this because a single ground truth box can have multiple
+            matching anchor boxes.
+        """
+        # Check the batch size of the anchors matches that of the ground truth boxes
+        if anchors.shape[0] != len(ground_truth_boxes):
+            raise ValueError(
+                f"Batch size mismatch: ABS={anchors.shape[0]} "
+                f"GTBS={len(ground_truth_boxes)}."
+            )
+
+        # Determine which anchor boxes have the highest IoU with the labels
+        matching_anchor_indicies: list[Tensor] = []
+        matching_gt_indicies: list[Tensor] = []
+        batch_size = len(ground_truth_boxes)
+        for idx in range(batch_size):
+            # Calculate anchor box IoU
+            image_anchors = anchors[idx, ...]
+            image_ground_truth_boxes = ground_truth_boxes[idx]
+            image_anchors_xyxy = box_convert(image_anchors, "cxcywh", "xyxy")
+            image_gt_xyxy = box_convert(image_ground_truth_boxes, "cxcywh", "xyxy")
+            iou_matrix = box_iou(image_anchors_xyxy, image_gt_xyxy)
+
+            # Find which anchor box best fits the label
+            max_ious, gt_indicies = iou_matrix.max(dim=1)
+            anchor_indicies_above_threshold = (
+                (max_ious > iou_threshold).nonzero().squeeze()
+            )
+            gt_indicies_above_threshold = gt_indicies[anchor_indicies_above_threshold]
+
+            matching_anchor_indicies.append(anchor_indicies_above_threshold)
+            matching_gt_indicies.append(gt_indicies_above_threshold)
+
+        return matching_anchor_indicies, matching_gt_indicies
+
+    @staticmethod
+    def nms(
+        boxes: Tensor, scores: Tensor, labels: Tensor, iou_threshold: float
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """
+        Applies non-max suppression on a per class basis to detections from single image
+        frame.
+        """
+
+        if boxes.shape[0] == 0:
+            return boxes, scores, labels
+
+        xyxy_boxes = box_convert(boxes, "cxcywh", "xyxy")
+
+        nms_boxes: list[Tensor] = []
+        nms_scores: list[Tensor] = []
+        nms_labels: list[Tensor] = []
+
+        # Split the objects per class
+        class_ids: Tensor = labels.unique(dim=0)
+        for class_id in class_ids:
+            class_idxs = labels == class_id
+            class_xyxy_boxes = xyxy_boxes[class_idxs]
+            class_scores = scores[class_idxs]
+
+            # Find the indices of the boxes to keep
+            kept_idxs = nms(class_xyxy_boxes, class_scores, iou_threshold)
+
+            class_boxes = box_convert(class_xyxy_boxes[kept_idxs], "xyxy", "cxcywh")
+            nms_boxes.append(class_boxes)
+            nms_scores.append(class_scores[kept_idxs])
+            nms_labels.append(
+                torch.zeros(
+                    (kept_idxs.numel(),), dtype=torch.int, device=class_boxes.device
+                )
+                + class_id
+            )
+
+        return (
+            torch.concat(nms_boxes, dim=0),
+            torch.concat(nms_scores, dim=0),
+            torch.concat(nms_labels, dim=0),
+        )

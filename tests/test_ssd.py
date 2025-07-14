@@ -1,8 +1,10 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import torch
 
 from ssd import SSD
 from ssd.anchor_box_generator import AnchorBoxGenerator
-from ssd.structs import FrameLabels
 
 
 class TestSSD:
@@ -12,6 +14,26 @@ class TestSSD:
         """
         model = SSD(2)
         assert isinstance(model, SSD)
+
+    def test_save_load(self):
+        """
+        Test that we can save and load the model in.
+        """
+        num_classes = 4
+        device = torch.device("cpu")
+        model = SSD(num_classes, device)
+
+        with TemporaryDirectory() as temp_dir:
+            file = Path(temp_dir) / "model.pt"
+
+            # Try to save the model
+            model.save(file)
+            assert file.exists()
+
+            # Try to load the model
+            loaded_model = model.load(file)
+            assert isinstance(loaded_model, SSD)
+            assert loaded_model.num_classes == num_classes
 
     def test_post_process_detections_representative(self):
         """
@@ -36,8 +58,9 @@ class TestSSD:
         # Try to post-process the detections
         confidence_threshold = 0.5
         num_top_k = 4
+        nms_iou_threshold = 0.3
         all_frame_detections = model._post_process_detections(
-            head_outputs, anchors, confidence_threshold, num_top_k
+            head_outputs, anchors, confidence_threshold, num_top_k, nms_iou_threshold
         )
 
         assert isinstance(all_frame_detections, list)

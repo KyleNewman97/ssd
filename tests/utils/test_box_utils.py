@@ -1,4 +1,6 @@
 import torch
+from torch import Tensor
+
 from ssd.utils import BoxUtils
 
 
@@ -105,3 +107,144 @@ class TestBoxUtils:
         assert isinstance(best_anchor_indices, list)
         assert len(best_anchor_indices) == batch_size
         assert best_anchor_indices[0].shape == (num_objects,)
+
+    def test_find_indicies_of_high_out_anchors(self):
+        """
+        Test that we can find the indicies of anchors (and the corresponding ground
+        truth boxes) that have an IoU above the specified threshold.
+        """
+        # Construct dummy inputs
+        anchors = torch.tensor(
+            [
+                [
+                    [0.05, 0.05, 0.1, 0.1],
+                    [0.06, 0.06, 0.1, 0.1],
+                    [0.1, 0.1, 0.1, 0.1],
+                    [2, 2, 0.1, 0.1],
+                ]
+            ]
+        )
+        labels = [
+            torch.tensor(
+                [[0.05, 0.05, 0.1, 0.1], [0.1, 0.1, 0.1, 0.1], [1, 1, 0.1, 0.1]]
+            )
+        ]
+
+        anchor_idxs, gt_idxs = BoxUtils.find_indices_of_high_iou_anchors(
+            anchors, labels, 0.1
+        )
+
+        assert isinstance(anchor_idxs, list)
+        assert len(anchor_idxs) == anchors.shape[0]
+        assert anchor_idxs[0].equal(torch.tensor([0, 1, 2]))
+
+        assert isinstance(gt_idxs, list)
+        assert len(gt_idxs) == anchors.shape[0]
+        assert gt_idxs[0].equal(torch.tensor([0, 0, 1]))
+
+    def test_nms_different_classes(self):
+        """
+        Test that NMS does not filter out boxes of different classes.
+        """
+        # Create dummy data
+        device = torch.device("cpu")
+        dtype = torch.float32
+        in_boxes = torch.tensor(
+            ([[0.05, 0.05, 0.1, 0.1], [0.05, 0.05, 0.1, 0.1]]),
+            dtype=dtype,
+            device=device,
+        )
+        in_scores = torch.tensor([1, 1], dtype=dtype, device=device)
+        in_labels = torch.tensor([0, 1], dtype=torch.int, device=device)
+
+        boxes, scores, labels = BoxUtils.nms(in_boxes, in_scores, in_labels, 0.1)
+
+        assert isinstance(boxes, Tensor)
+        assert boxes.shape == in_boxes.shape
+        assert boxes.equal(in_boxes)
+
+        assert isinstance(scores, Tensor)
+        assert scores.shape == in_scores.shape
+        assert scores.equal(in_scores)
+
+        assert isinstance(labels, Tensor)
+        assert labels.shape == in_labels.shape
+        assert labels.equal(in_labels)
+
+    def test_nms_same_class(self):
+        """
+        Test that NMS filters boxes of the same class (above the IoU threshold).
+        """
+        # Create dummy data
+        device = torch.device("cpu")
+        dtype = torch.float32
+        in_boxes = torch.tensor(
+            ([[0.05, 0.05, 0.1, 0.1], [0.05, 0.05, 0.05, 0.05]]),
+            dtype=dtype,
+            device=device,
+        )
+        in_scores = torch.tensor([1, 1], dtype=dtype, device=device)
+        in_labels = torch.tensor([0, 0], dtype=torch.int, device=device)
+
+        boxes, scores, labels = BoxUtils.nms(in_boxes, in_scores, in_labels, 0.24)
+
+        assert isinstance(boxes, Tensor)
+        expected_boxes = in_boxes[:1, :]
+        assert boxes.shape == expected_boxes.shape
+        assert boxes.equal(expected_boxes)
+
+        assert isinstance(scores, Tensor)
+        expected_scores = in_scores[:1]
+        assert scores.shape == expected_scores.shape
+        assert scores.equal(expected_scores)
+
+        assert isinstance(labels, Tensor)
+        expected_labels = in_labels[:1]
+        assert labels.shape == expected_labels.shape
+        assert labels.equal(expected_labels)
+
+    def test_nms_below_iou_threshold(self):
+        """
+        Test that NMS does not filter boxes below the IoU threshold.
+        """
+        # Create dummy data
+        device = torch.device("cpu")
+        dtype = torch.float32
+        in_boxes = torch.tensor(
+            ([[0.05, 0.05, 0.1, 0.1], [0.05, 0.05, 0.05, 0.05]]),
+            dtype=dtype,
+            device=device,
+        )
+        in_scores = torch.tensor([1, 1], dtype=dtype, device=device)
+        in_labels = torch.tensor([0, 0], dtype=torch.int, device=device)
+
+        boxes, scores, labels = BoxUtils.nms(in_boxes, in_scores, in_labels, 0.26)
+
+        assert isinstance(boxes, Tensor)
+        assert boxes.shape == in_boxes.shape
+        assert boxes.allclose(in_boxes)
+
+        assert isinstance(scores, Tensor)
+        assert scores.shape == in_scores.shape
+        assert scores.allclose(in_scores)
+
+        assert isinstance(labels, Tensor)
+        assert labels.shape == in_labels.shape
+        assert labels.equal(in_labels)
+
+    def test_nms_empty_boxes(self):
+        """
+        Test NMS doesn't throw an error when an empty boxes tensor is passed in.
+        """
+        # Create dummy data
+        device = torch.device("cpu")
+        dtype = torch.float32
+        in_boxes = torch.zeros((0, 4), dtype=dtype, device=device)
+        in_scores = torch.zeros((0,), dtype=dtype, device=device)
+        in_labels = torch.zeros((0,), dtype=torch.int, device=device)
+
+        boxes, scores, labels = BoxUtils.nms(in_boxes, in_scores, in_labels, 0.26)
+
+        assert boxes.allclose(in_boxes)
+        assert scores.allclose(in_scores)
+        assert labels.allclose(in_labels)

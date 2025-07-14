@@ -1,11 +1,16 @@
 from functools import partial
+from pathlib import Path
 
 import torch
+import numpy as np
+from PIL import Image
 from torch import nn, Tensor
 from torch.nn.functional import cross_entropy, smooth_l1_loss, softmax
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ChainedScheduler, CosineAnnealingLR, LinearLR
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torchvision.transforms.functional import pil_to_tensor
 from tqdm import tqdm
 
 from ssd.anchor_box_generator import AnchorBoxGenerator
@@ -16,16 +21,21 @@ from ssd.utils import BoxUtils, MetaLogger, TrainUtils
 
 
 class SSD(nn.Module, MetaLogger):
-    def __init__(self, num_classes: int):
+    def __init__(self, num_classes: int, device: torch.device | None = None):
         nn.Module.__init__(self)
         MetaLogger.__init__(self)
 
         self.num_classes = num_classes
-        self.device = (
-            torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-        )
+        if device is None:
+            self.device = (
+                torch.device("cuda:0")
+                if torch.cuda.is_available()
+                else torch.device("cpu")
+            )
+        else:
+            self.device = device
 
-        self.backbone = SSDBackbone()
+        self.backbone = SSDBackbone(self.device)
         self.anchor_box_generator = AnchorBoxGenerator(self.device)
 
         # Construct the heads for each of the output feature layers
@@ -45,6 +55,12 @@ class SSD(nn.Module, MetaLogger):
             256, 4 * self.minor_dim_size, kernel_size=3, padding=1
         )
 
+        self.to(self.device)
+
+    def set_device(self, device: torch.device):
+        self.device = device
+        self.backbone.set_device(device)
+        self.anchor_box_generator.set_device(device)
         self.to(self.device)
 
     def forward(self, images: Tensor) -> tuple[Tensor, Tensor]:
@@ -100,6 +116,15 @@ class SSD(nn.Module, MetaLogger):
             optimiser,
         )
 
+        # Create summary writer (TensorBoard)
+        self.logger.info(f"Training model: {config.log_dir.name}")
+        config.log_dir.mkdir()
+        summary_writer = SummaryWriter(config.log_dir)
+
+        # Run over the training dataset
+        best_val_loss = np.inf
+        train_losses: list[Losses] = []
+        num_train_losses = 4
         for epoch in range(config.num_epochs):
             self.logger.info(f"Epoch: {epoch}")
 
@@ -109,13 +134,19 @@ class SSD(nn.Module, MetaLogger):
             self.train()
             tqdm_iterator = tqdm(train_loader, ncols=88)
             tqdm_iterator.set_description_str("Train")
-            for idx, (images, objects) in enumerate(tqdm_iterator):
+            for images, objects in tqdm_iterator:
                 # Zero the gradients - this is required on each mini-batch
                 optimiser.zero_grad()
 
                 # Make predictions for this batch and calculate the loss
                 head_outputs, anchors = self.forward(images)
-                loss = self._compute_loss(head_outputs, anchors, objects)
+                loss = self._compute_loss(
+                    head_outputs,
+                    anchors,
+                    objects,
+                    config.anchor_iou_threshold,
+                    config.box_loss_scaling_factor,
+                )
 
                 # Backprop
                 total_loss = loss.class_loss + loss.box_loss
@@ -127,10 +158,120 @@ class SSD(nn.Module, MetaLogger):
                     f"box_loss={loss.box_loss.item():.4}"
                 )
 
+                # Update the last `num_train_losses` stored in train_losses
+                train_losses.append(loss)
+                if num_train_losses < len(train_losses):
+                    train_losses.pop(0)
+
             # Update the learning rate scheduler
             scheduler.step()
 
             tqdm_iterator.close()
+
+            # Run over the validation dataset
+            self.eval()
+            val_losses: list[Losses] = []
+            with torch.no_grad():
+                tqdm_iterator = tqdm(val_loader, ncols=88)
+                tqdm_iterator.set_description_str("Valid")
+                for images, objects in tqdm_iterator:
+                    head_outputs, anchors = self.forward(images)
+                    loss = self._compute_loss(
+                        head_outputs,
+                        anchors,
+                        objects,
+                        config.anchor_iou_threshold,
+                        config.box_loss_scaling_factor,
+                    )
+                    val_losses.append(loss)
+                tqdm_iterator.close()
+
+            # Calculate metrics
+            t_class_loss = np.mean([loss.class_loss.item() for loss in train_losses])
+            t_box_loss = np.mean([loss.box_loss.item() for loss in train_losses])
+            v_class_loss = np.mean([loss.class_loss.item() for loss in val_losses])
+            v_box_loss = np.mean([loss.box_loss.item() for loss in val_losses])
+            val_loss = v_class_loss + v_box_loss
+            self.logger.info(f"Train cls_loss={t_class_loss}, box_loss={t_box_loss}")
+            self.logger.info(f"Val cls_loss={v_class_loss}, box_loss={v_box_loss}")
+
+            # Write metrics to tensorboard
+            summary_writer.add_scalar("Loss/train_class", t_class_loss, epoch)
+            summary_writer.add_scalar("Loss/train_box", t_box_loss, epoch)
+            summary_writer.add_scalar("Loss/val_class", v_class_loss, epoch)
+            summary_writer.add_scalar("Loss/val_box", v_box_loss, epoch)
+            summary_writer.add_scalar("Optim/lr", scheduler.get_last_lr()[0], epoch)
+            summary_writer.flush()
+
+            # Save the model
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                self.logger.info("Saving new best model.")
+                self.save(config.log_dir / "best.pt")
+            self.save(config.log_dir / "last.pt")
+
+        # Clean up at the end of training
+        summary_writer.close()
+
+    def infer(
+        self,
+        file: Path,
+        confidence_threshold: float = 0.5,
+        num_top_k: int = 100,
+        dtype: torch.dtype = torch.float32,
+        width: int = 300,
+        height: int = 300,
+        nms_iou_threshold: float = 0.4,
+    ) -> FrameDetections:
+        # Pre-process the image
+        pil_image = Image.open(file)
+        image = pil_to_tensor(pil_image).to(device=self.device, dtype=dtype)
+        image /= 255
+
+        # If the image is gray scale repeat the first dimension
+        if image.shape[0] == 1:
+            image = image.repeat((3, 1, 1))
+
+        # Transform to the right shape
+        transform = LetterboxTransform(width, height, dtype)
+        image = transform.transform_image(image, self.device)
+        image = image.unsqueeze(0)
+
+        head_outputs, anchors = self.forward(image)
+        return self._post_process_detections(
+            head_outputs, anchors, confidence_threshold, num_top_k, nms_iou_threshold
+        )[0]
+
+    def save(self, file: Path):
+        """
+        Saves the model to the specified location. By convention this location should
+        end with ".pt".
+        """
+        torch.save(
+            {
+                "model": self.state_dict(),
+                "num_classes": self.num_classes,
+                "device": self.device.type,
+            },
+            file,
+        )
+
+    @classmethod
+    def load(cls, file: Path, device: torch.device | None = None) -> "SSD":
+        """
+        Load the model from the specified location.
+        """
+        # Load the previous state
+        model_state = torch.load(file, weights_only=True, map_location=device)
+        num_classes = model_state["num_classes"]
+        device = torch.device(model_state["device"]) if device is None else device
+
+        # Initialise the model
+        model = cls(num_classes, device)
+        model.load_state_dict(model_state["model"])
+        model.eval()
+
+        return model
 
     def _create_data_loaders(
         self, config: TrainConfig
@@ -180,6 +321,7 @@ class SSD(nn.Module, MetaLogger):
         anchors: Tensor,
         confidence_threshold: float,
         num_top_k: int,
+        nms_iou_threshold: float,
     ) -> list[FrameDetections]:
         batch_size = head_outputs.shape[0]
 
@@ -206,52 +348,72 @@ class SSD(nn.Module, MetaLogger):
             kept_scores = im_class_probs[keep_box_idxs, :]
 
             # Only keep the top-k detections
+            k = min(num_top_k, kept_scores.shape[0])
             kept_max_scores, labels = kept_scores.max(dim=-1)
-            top_k_scores, top_k_indices = kept_max_scores.topk(num_top_k, dim=0)
+            top_k_scores, top_k_indices = kept_max_scores.topk(k, dim=0)
             top_k_boxes = kept_boxes.gather(
                 dim=0, index=torch.stack([top_k_indices] * 4, dim=1)
             )
-            top_k_labels = labels.gather(dim=0, index=top_k_indices)
+            top_k_labels = labels.gather(dim=0, index=top_k_indices).to(torch.int)
+
+            # Apply non-max suppression
+            nms_boxes, nms_scores, nms_labels = BoxUtils.nms(
+                top_k_boxes, top_k_scores, top_k_labels, nms_iou_threshold
+            )
 
             frame_detections.append(
-                FrameDetections(
-                    boxes=top_k_boxes, scores=top_k_scores, labels=top_k_labels
-                )
+                FrameDetections(boxes=nms_boxes, scores=nms_scores, labels=nms_labels)
             )
 
         return frame_detections
 
     def _compute_loss(
-        self, head_outputs: Tensor, anchors: Tensor, objects: list[Tensor]
+        self,
+        head_outputs: Tensor,
+        anchors: Tensor,
+        gt_objects: list[Tensor],
+        matching_iou_threshold: float,
+        box_loss_scaling_factor: float,
     ) -> Losses:
         """ """
 
         # Determine which anchor boxes have the highest IoU with the labels
-        gt_boxes_image_domain = [o[:, 1:] for o in objects]
-        best_anchor_indices = BoxUtils.find_indices_of_best_anchor_boxes(
-            anchors, gt_boxes_image_domain
+        gt_boxes_image_domain = [o[:, 1:] for o in gt_objects]
+        matching_anchor_idxs, matching_gt_idxs = (
+            BoxUtils.find_indices_of_high_iou_anchors(
+                anchors, gt_boxes_image_domain, matching_iou_threshold
+            )
         )
 
         # Extract the predicted boxes (in regression domain) and class logits
-        boxes_regression_domain = head_outputs[..., :4]
-        class_logits = head_outputs[..., 4:]
+        pred_boxes_regression_domain = head_outputs[..., :4]
+        pred_class_logits = head_outputs[..., 4:]
 
         # Loop through each image and calculate the box loss
         box_loss_list: list[Tensor] = []
         for (
-            image_boxes_regression_domain,
-            image_best_anchor_indices,
-            image_objects,
+            image_pred_boxes_regression_domain,
+            image_matching_anchor_idxs,
+            image_matching_gt_idxs,
+            image_gt_objects,
             image_anchors,
-        ) in zip(boxes_regression_domain, best_anchor_indices, objects, anchors):
+        ) in zip(
+            pred_boxes_regression_domain,
+            matching_anchor_idxs,
+            matching_gt_idxs,
+            gt_objects,
+            anchors,
+        ):
             # Find the predicted boxes in the regression domain
-            matched_boxes_regression_domain = image_boxes_regression_domain[
-                image_best_anchor_indices
+            matched_pred_boxes_regression_domain = image_pred_boxes_regression_domain[
+                image_matching_anchor_idxs
             ]
 
-            # Convert the ground truth boxes to the regression domain
-            gt_boxes_image_domain = image_objects[:, 1:]
-            matched_anchors = image_anchors[image_best_anchor_indices]
+            # Since one ground truth box can have multiple anchor boxes associated with
+            # it we may have to duplicate the GT boxes (have one for each corresponding
+            # anchor box)
+            gt_boxes_image_domain = image_gt_objects[image_matching_gt_idxs, 1:]
+            matched_anchors = image_anchors[image_matching_anchor_idxs]
             gt_boxes_regression_domain = BoxUtils.image_domain_to_regression_domain(
                 gt_boxes_image_domain, matched_anchors
             )
@@ -259,7 +421,7 @@ class SSD(nn.Module, MetaLogger):
             # Calculate the box loss
             box_loss_list.append(
                 smooth_l1_loss(
-                    matched_boxes_regression_domain,
+                    matched_pred_boxes_regression_domain,
                     gt_boxes_regression_domain,
                     reduction="sum",
                 )
@@ -269,33 +431,33 @@ class SSD(nn.Module, MetaLogger):
         # Calculate the classification loss
         total_num_objects = 0
         gt_classes_list: list[Tensor] = []
-        for image_class_logits, image_best_anchor_indices, image_objects in zip(
-            class_logits, best_anchor_indices, objects
-        ):
+        for (
+            image_class_logits,
+            image_matching_anchor_idxs,
+            image_matching_gt_idxs,
+            image_gt_objects,
+        ) in zip(pred_class_logits, matching_anchor_idxs, matching_gt_idxs, gt_objects):
             # Set the label for each anchor box
             image_gt_classes = torch.zeros(
                 (image_class_logits.shape[0],),
                 device=self.device,
                 dtype=image_class_logits.dtype,
             )
-            image_gt_classes[image_best_anchor_indices] = image_objects[:, 0]
-            total_num_objects += image_objects[:, 0].numel()
+            image_gt_classes[image_matching_anchor_idxs] = image_gt_objects[
+                image_matching_gt_idxs, 0
+            ]
+            total_num_objects += image_gt_objects[:, 0].numel()
 
             gt_classes_list.append(image_gt_classes)
         gt_classes = torch.stack(gt_classes_list, dim=0)
 
         # Calculate classification loss
-        class_logits = class_logits.permute((0, 2, 1))
+        pred_class_logits = pred_class_logits.permute((0, 2, 1))
         gt_classes = gt_classes.to(torch.long)
-        class_loss = cross_entropy(class_logits, gt_classes, reduction="none")
+        class_loss = cross_entropy(pred_class_logits, gt_classes, reduction="none")
 
         N = max(1, total_num_objects)
-        return Losses(box_loss=box_loss.sum() / N, class_loss=class_loss.sum() / N)
-
-    def infer(
-        self, images: Tensor, confidence_threshold: float = 0.5, num_top_k: int = 100
-    ) -> list[FrameDetections]:
-        head_outputs, anchors = self.forward(images)
-        return self._post_process_detections(
-            head_outputs, anchors, confidence_threshold, num_top_k
+        return Losses(
+            box_loss=(box_loss.sum() / N) * box_loss_scaling_factor,
+            class_loss=class_loss.sum() / N,
         )
