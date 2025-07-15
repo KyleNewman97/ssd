@@ -12,7 +12,8 @@ class TestSSD:
         """
         Test the model can be initialised.
         """
-        model = SSD(2)
+        device = torch.device("cpu")
+        model = SSD(2, device)
         assert isinstance(model, SSD)
 
     def test_save_load(self):
@@ -43,17 +44,16 @@ class TestSSD:
 
         # Initialise the model
         num_classes = 2
-        model = SSD(num_classes)
+        device = torch.device("cpu")
+        model = SSD(num_classes, device)
 
         # Initialise dummy inputs
         batch_size = 2
         feature_map_sizes = [(38, 38), (19, 19), (10, 10), (5, 5), (3, 3), (1, 1)]
         head_outputs = torch.rand(
-            (batch_size, 8732, 4 + 1 + num_classes), device=model.device
+            (batch_size, 8732, 4 + 1 + num_classes), device=device
         )
-        anchors = AnchorBoxGenerator(torch.device("cpu")).forward(
-            batch_size, feature_map_sizes
-        )
+        anchors = AnchorBoxGenerator(device).forward(batch_size, feature_map_sizes)
 
         # Try to post-process the detections
         confidence_threshold = 0.5
@@ -69,6 +69,6 @@ class TestSSD:
         for frame_detections in all_frame_detections:
             assert frame_detections.boxes.shape == (num_top_k, 4)
             assert frame_detections.scores.shape == (num_top_k,)
-            assert frame_detections.labels.shape == (num_top_k,)
+            assert frame_detections.class_ids.shape == (num_top_k,)
 
             assert frame_detections.scores.min() > confidence_threshold

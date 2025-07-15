@@ -16,7 +16,7 @@ from tqdm import tqdm
 from ssd.anchor_box_generator import AnchorBoxGenerator
 from ssd.data import LetterboxTransform, SSDDataset
 from ssd.ssd_backbone import SSDBackbone
-from ssd.structs import FrameDetections, Losses, TrainConfig
+from ssd.structs import FrameDetections, FrameLabels, Losses, TrainConfig
 from ssd.utils import BoxUtils, MetaLogger, TrainUtils
 
 
@@ -130,7 +130,7 @@ class SSD(nn.Module, MetaLogger):
 
             # Run the training epoch
             images: Tensor
-            objects: list[Tensor]
+            objects: list[FrameLabels]
             self.train()
             tqdm_iterator = tqdm(train_loader, ncols=88)
             tqdm_iterator.set_description_str("Train")
@@ -362,7 +362,9 @@ class SSD(nn.Module, MetaLogger):
             )
 
             frame_detections.append(
-                FrameDetections(boxes=nms_boxes, scores=nms_scores, labels=nms_labels)
+                FrameDetections(
+                    boxes=nms_boxes, scores=nms_scores, class_ids=nms_labels
+                )
             )
 
         return frame_detections
@@ -371,14 +373,14 @@ class SSD(nn.Module, MetaLogger):
         self,
         head_outputs: Tensor,
         anchors: Tensor,
-        gt_objects: list[Tensor],
+        gt_objects: list[FrameLabels],
         matching_iou_threshold: float,
         box_loss_scaling_factor: float,
     ) -> Losses:
         """ """
 
         # Determine which anchor boxes have the highest IoU with the labels
-        gt_boxes_image_domain = [o[:, 1:] for o in gt_objects]
+        gt_boxes_image_domain = [o.boxes for o in gt_objects]
         matching_anchor_idxs, matching_gt_idxs = (
             BoxUtils.find_indices_of_high_iou_anchors(
                 anchors, gt_boxes_image_domain, matching_iou_threshold
@@ -412,7 +414,7 @@ class SSD(nn.Module, MetaLogger):
             # Since one ground truth box can have multiple anchor boxes associated with
             # it we may have to duplicate the GT boxes (have one for each corresponding
             # anchor box)
-            gt_boxes_image_domain = image_gt_objects[image_matching_gt_idxs, 1:]
+            gt_boxes_image_domain = image_gt_objects.boxes[image_matching_gt_idxs, :]
             matched_anchors = image_anchors[image_matching_anchor_idxs]
             gt_boxes_regression_domain = BoxUtils.image_domain_to_regression_domain(
                 gt_boxes_image_domain, matched_anchors
@@ -443,10 +445,10 @@ class SSD(nn.Module, MetaLogger):
                 device=self.device,
                 dtype=image_class_logits.dtype,
             )
-            image_gt_classes[image_matching_anchor_idxs] = image_gt_objects[
-                image_matching_gt_idxs, 0
+            image_gt_classes[image_matching_anchor_idxs] = image_gt_objects.class_ids[
+                image_matching_gt_idxs
             ]
-            total_num_objects += image_gt_objects[:, 0].numel()
+            total_num_objects += image_gt_objects.class_ids.numel()
 
             gt_classes_list.append(image_gt_classes)
         gt_classes = torch.stack(gt_classes_list, dim=0)

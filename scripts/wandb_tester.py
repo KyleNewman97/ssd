@@ -1,17 +1,14 @@
 from pathlib import Path
 from uuid import uuid4
 
-from ssd import SSD
+import numpy as np
+
 from ssd.structs import TrainConfig
+from ssd.utils import WeightsAndBiasesLogger
 
 if __name__ == "__main__":
-    # Define the training configuration
     coco_dir = Path("/mnt/data/datasets/object_detection/coco/")
-    model_file = Path(
-        "/mnt/data/code/ssd/models/f8cc29d1-7372-4985-97cf-d2bdd8aaab0a/last.pt"
-    )
     train_config = TrainConfig(
-        lr0=2e-6,
         num_epochs=100,
         num_classes=80,
         train_images_dir=coco_dir / "images/train2017",
@@ -21,5 +18,14 @@ if __name__ == "__main__":
         log_dir=Path(f"/mnt/data/code/ssd/models/{uuid4()}"),
     )
 
-    model = SSD.load(model_file)
-    model.fit(train_config)
+    logger = WeightsAndBiasesLogger("brrr", "ssd", f"{uuid4()}", train_config)
+
+    for idx in range(10):
+        logger.log_epoch(
+            idx,
+            np.random.rand(),
+            np.random.rand(),
+            np.random.rand(),
+            np.random.rand(),
+            np.random.rand(),
+        )

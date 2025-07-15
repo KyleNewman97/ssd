@@ -5,6 +5,6 @@ from torch import Tensor
 class FrameDetections(BaseModel):
     boxes: Tensor
     scores: Tensor
-    labels: Tensor
+    class_ids: Tensor
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

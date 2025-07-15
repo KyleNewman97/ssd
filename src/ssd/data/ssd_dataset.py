@@ -7,6 +7,7 @@ from torch.utils.data import Dataset
 from torchvision.transforms.functional import pil_to_tensor
 
 from ssd.data.letterbox_transform import LetterboxTransform
+from ssd.structs import FrameLabels
 from ssd.utils import MetaLogger
 
 
@@ -134,7 +135,9 @@ class SSDDataset(Dataset, MetaLogger):
         return filtered_samples
 
     @staticmethod
-    def read_label_file(file: Path, device: torch.device, dtype: torch.dtype) -> Tensor:
+    def read_label_file(
+        file: Path, device: torch.device, dtype: torch.dtype
+    ) -> FrameLabels:
         """
         Reads in a label file and returns a tensor of the objects contained in it.
 
@@ -160,7 +163,8 @@ class SSDDataset(Dataset, MetaLogger):
 
         Returns
         -------
-        objects:
+        frame_labels:
+            An object encapsulating the objects contained in the image/frame.
             A tensor of the objects defined in the label file. This will have dimensions
             of `(num_objects, 5)` and will have the elements ordered as:
 
@@ -172,7 +176,8 @@ class SSDDataset(Dataset, MetaLogger):
         # Load in the labels
         with open(file, "r") as fp:
             lines = fp.read().split("\n")
-            labels: list[tuple[int, float, float, float, float]] = []
+            cls_ids: list[int] = []
+            boxes: list[tuple[float, float, float, float]] = []
             for line in lines:
                 elements = line.strip().split(" ")
 
@@ -185,19 +190,23 @@ class SSDDataset(Dataset, MetaLogger):
                 center_y = float(elements[2])
                 width = float(elements[3])
                 height = float(elements[4])
-                labels.append((class_id, center_x, center_y, width, height))
+                cls_ids.append(class_id)
+                boxes.append((center_x, center_y, width, height))
 
         # Put the labels into a tensor
-        label_tensor = torch.zeros((len(labels), 5), dtype=dtype, device=device)
-        for idx, label in enumerate(labels):
-            label_tensor[idx, :] = torch.tensor(label, dtype=dtype, device=device)
+        cls_ids_tensor = torch.zeros((len(cls_ids),), dtype=torch.int, device=device)
+        boxes_tensor = torch.zeros((len(boxes), 4), dtype=dtype, device=device)
+        for idx, (cls_id, box) in enumerate(zip(cls_ids, boxes)):
+            cls_ids_tensor[idx] = cls_id
+            for dim_idx in range(len(box)):
+                boxes_tensor[idx, dim_idx] = box[dim_idx]
 
-        return label_tensor
+        return FrameLabels(boxes=boxes_tensor, class_ids=cls_ids_tensor)
 
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> tuple[Tensor, Tensor]:
+    def __getitem__(self, idx: int) -> tuple[Tensor, FrameLabels]:
         image_file, label_file = self.samples[idx]
 
         # Load in the image and pre-process it

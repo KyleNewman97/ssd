@@ -9,6 +9,7 @@ from PIL import Image
 from torch import Tensor
 
 from ssd.data import LetterboxTransform, SSDDataset
+from ssd.structs import FrameLabels
 
 
 class TestSSDDataset:
@@ -149,11 +150,13 @@ class TestSSDDataset:
                 fp.write("0 0.5358 0.4942 0.3483 0.7085\n1 0.2 0.4 0.02 0.08\n")
 
             # Try to read in the labels
-            labels = SSDDataset.read_label_file(file, device, torch.float32)
+            objects = SSDDataset.read_label_file(file, device, torch.float32)
 
         # Check the contents is correct
-        assert labels.device == device
-        assert labels.shape == (2, 5)
+        assert objects.boxes.device == device
+        assert objects.class_ids.device == device
+        assert objects.boxes.shape == (2, 4)
+        assert objects.class_ids.shape == (2,)
 
     def test_get_item(self, device: torch.device):
         """
@@ -183,7 +186,7 @@ class TestSSDDataset:
             device,
             torch.float32,
         )
-        image, label = dataset[0]
+        image, objects = dataset[0]
 
         # Check the output shapes are correct
         assert isinstance(image, Tensor)
@@ -192,7 +195,10 @@ class TestSSDDataset:
         assert image.shape == (3, height, width)
         assert 0 <= image.min() <= 1
         assert 0 <= image.max() <= 1
-        assert isinstance(label, Tensor)
-        assert label.device == device
-        assert label.dtype == dtype
-        assert label.shape == (1, 5)
+        assert isinstance(objects, FrameLabels)
+        assert objects.boxes.device == device
+        assert objects.class_ids.device == device
+        assert objects.boxes.dtype == dtype
+        assert objects.class_ids.dtype == torch.int
+        assert objects.boxes.shape == (1, 4)
+        assert objects.class_ids.shape == (1,)

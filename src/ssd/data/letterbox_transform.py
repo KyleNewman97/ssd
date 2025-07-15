@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from torch import nn, Tensor
 from torchvision.transforms.functional import resize
 
+from ssd.structs import FrameLabels
+
 
 class LetterboxTransform(nn.Module):
     def __init__(
@@ -58,26 +60,26 @@ class LetterboxTransform(nn.Module):
         return output_image
 
     def transform_objects(
-        self, objects: Tensor, image_width: int, image_height: int
-    ) -> Tensor:
+        self, objects: FrameLabels, image_width: int, image_height: int
+    ) -> FrameLabels:
         params = self._calculate_transform_params(image_width, image_height)
 
         # Adjust the object positions
-        out_objects = objects.clone()
+        out_boxes = objects.boxes.clone()
         if params.desired_wh_ratio <= params.image_wh_ratio:
             # When bound by the width adjust the y values
-            out_objects[:, 2::2] *= params.new_height / self.desired_height
-            out_objects[:, 2] += params.y_start / self.desired_height
+            out_boxes[:, 1::2] *= params.new_height / self.desired_height
+            out_boxes[:, 1] += params.y_start / self.desired_height
         else:
             # When bound by the height adjust the x values
-            out_objects[:, 1::2] *= params.new_width / self.desired_width
-            out_objects[:, 1] += params.y_end / self.desired_width
+            out_boxes[:, 0::2] *= params.new_width / self.desired_width
+            out_boxes[:, 0] += params.y_end / self.desired_width
 
-        return out_objects
+        return FrameLabels(boxes=out_boxes, class_ids=objects.class_ids)
 
     def __call__(
-        self, image: Tensor, objects: Tensor, device: torch.device
-    ) -> tuple[Tensor, Tensor]:
+        self, image: Tensor, objects: FrameLabels, device: torch.device
+    ) -> tuple[Tensor, FrameLabels]:
         """
         Applies the letterbox transform to both the image and the objects.
 
@@ -87,10 +89,7 @@ class LetterboxTransform(nn.Module):
             A single image tensor with dimensions of `(channels, height, width)`.
 
         objects:
-            The classification and bounding box of objects within the image. This is
-            structured as `(num_objects, 5)`. With the last dimension containing the
-            following: `(class_id, cx, cy, w, h)`. The bounding box is defined in
-            normalised space (betweem 0 and 1).
+            Labelled objects for the image.
 
         device:
             The device to put place the data onto.
@@ -102,8 +101,7 @@ class LetterboxTransform(nn.Module):
             `(channels, desired_height, desired_width)`.
 
         out_objects:
-            A letterboxed version of the original objects. This will have the same shape
-            as the input objects: `(num_objects, 5)`.
+            A letterboxed version of the image's objects.
         """
 
         letterbox_image = self.transform_image(image, device)
