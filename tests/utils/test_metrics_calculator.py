@@ -1,4 +1,6 @@
 import torch
+from pytest_mock import MockerFixture
+from torch import Tensor
 
 from ssd.structs import FrameDetections, FrameLabels
 from ssd.utils import MetricsCalculator
@@ -518,3 +520,134 @@ class TestMetricsCalculator:
             [[[0], [1]], [[1], [1]]], dtype=torch.int, device=device
         )
         assert fns.equal(expected_fns)
+
+    def test_precisions(self):
+        """
+        Test we can calculate the precisions correctly.
+        """
+        device = torch.device("cpu")
+
+        num_classes = 2
+        iou_thresholds = [0.24, 0.26]
+        conf_thresholds = [0.4, 0.55]
+        metrics = MetricsCalculator(num_classes, iou_thresholds, conf_thresholds)
+
+        # Create dummy data
+        shape = (len(conf_thresholds), len(iou_thresholds), num_classes)
+        tps = torch.randint(0, 100, shape, dtype=torch.int, device=device)
+        fps = torch.randint(0, 100, shape, dtype=torch.int, device=device)
+        metrics._tps = tps
+        metrics._fps = fps
+
+        # Calculate the precisions
+        precisions = metrics.precisions()
+
+        assert isinstance(precisions, Tensor)
+        assert precisions.shape == shape
+        assert precisions.dtype == torch.float32
+
+    def test_precisions_no_tp_or_fp(self):
+        """
+        Test that we get a 1 when `tp = 0` and `fp = 0`.
+        """
+        device = torch.device("cpu")
+
+        num_classes = 1
+        iou_thresholds = [0.24]
+        conf_thresholds = [0.4]
+        metrics = MetricsCalculator(num_classes, iou_thresholds, conf_thresholds)
+
+        # Create dummy data
+        tps = torch.tensor([[[0]]], dtype=torch.int, device=device)
+        fps = torch.tensor([[[0]]], dtype=torch.int, device=device)
+        metrics._tps = tps
+        metrics._fps = fps
+
+        # Calculate the precisions
+        precisions = metrics.precisions()
+
+        expected = torch.tensor([[[1]]], dtype=torch.float32, device=device)
+        assert precisions.equal(expected)
+
+    def test_recalls(self):
+        """
+        Test we can calculate the recalls correctly.
+        """
+        device = torch.device("cpu")
+
+        num_classes = 2
+        iou_thresholds = [0.24, 0.26]
+        conf_thresholds = [0.4, 0.55]
+        metrics = MetricsCalculator(num_classes, iou_thresholds, conf_thresholds)
+
+        # Create dummy data
+        shape = (len(conf_thresholds), len(iou_thresholds), num_classes)
+        tps = torch.randint(0, 100, shape, dtype=torch.int, device=device)
+        fns = torch.randint(0, 100, shape, dtype=torch.int, device=device)
+        metrics._tps = tps
+        metrics._fns = fns
+
+        # Calculate the recalls
+        recalls = metrics.recalls()
+
+        assert isinstance(recalls, Tensor)
+        assert recalls.shape == shape
+        assert recalls.dtype == torch.float32
+
+    def test_recalls_no_tp_or_fn(self):
+        """
+        Test that we get a 1 when `tp = 0` and `fn = 0`.
+        """
+        device = torch.device("cpu")
+
+        num_classes = 1
+        iou_thresholds = [0.24]
+        conf_thresholds = [0.4]
+        metrics = MetricsCalculator(num_classes, iou_thresholds, conf_thresholds)
+
+        # Create dummy data
+        tps = torch.tensor([[[0]]], dtype=torch.int, device=device)
+        fns = torch.tensor([[[0]]], dtype=torch.int, device=device)
+        metrics._tps = tps
+        metrics._fns = fns
+
+        # Calculate the precisions
+        recalls = metrics.recalls()
+
+        expected = torch.tensor([[[1]]], dtype=torch.float32, device=device)
+        assert recalls.equal(expected)
+
+    def test_APs(self, mocker: MockerFixture):
+        """
+        Test that we can calculate the average precision correctly.
+        """
+        dtype = torch.float32
+        device = torch.device("cpu")
+
+        # Create dummy precision and recalls
+        precisions = torch.tensor(
+            [[[0.0]], [[0.2]], [[0.4]], [[0.6]], [[0.8]], [[1.0]]],
+            dtype=dtype,
+            device=device,
+        )
+        recalls = torch.tensor(
+            [[[1.0]], [[0.8]], [[0.6]], [[0.4]], [[0.2]], [[0.0]]],
+            dtype=dtype,
+            device=device,
+        )
+        mocker.patch.object(MetricsCalculator, "precisions", return_value=precisions)
+        mocker.patch.object(MetricsCalculator, "recalls", return_value=recalls)
+
+        # Calculate average precisions
+        num_classes = 1
+        iou_thresholds = [0.24]
+        conf_thresholds = [0.1 * (i + 1) for i in range(6)]
+        metrics = MetricsCalculator(num_classes, iou_thresholds, conf_thresholds)
+        APs = metrics.APs()
+
+        # Check the output is correct
+        assert isinstance(APs, Tensor)
+        expected_shape = (len(iou_thresholds), num_classes)
+        assert APs.shape == expected_shape
+        expected_APs = torch.tensor([[0.5]], dtype=dtype, device=device)
+        assert APs.allclose(expected_APs)

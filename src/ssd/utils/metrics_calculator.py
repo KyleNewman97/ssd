@@ -211,3 +211,79 @@ class MetricsCalculator(MetaLogger):
                 self._fns[:, :, class_id] += count - tps[:, :, class_id]
 
         return self._fns
+
+    def precisions(self) -> Tensor:
+        """
+        Calculate the precision on a per-class basis at various confidence and IoU
+        thresholds.
+
+        Returns
+        -------
+        precisions:
+            A tensor shaped as `(num_confs, num_ious, num_classes)` with each entry
+            representing the corresponding `(conf, iou, class)` tuple's precision.
+        """
+        precisions = self.tps() / (self.tps() + self.fps())
+
+        # Ensure that when there are no false positives the precision equals 1
+        # This is to handle the case when `tps = 0` and `fps = 0`
+        precisions[self.fps() == 0] = 1
+
+        return precisions
+
+    def recalls(self) -> Tensor:
+        """
+        Calculate the recall on a per-class basis at various confidence and IoU
+        thresholds.
+
+        Returns
+        -------
+        recalls:
+            A tensor shaped as `(num_confs, num_ious, num_classes)` with each entry
+            representing the corresponding `(conf, iou, class)` tuple's recall.
+        """
+        recalls = self.tps() / (self.tps() + self.fns())
+
+        # Ensure that when there are no false negatives the recall equals 1
+        # This is to handle the case when `tps = 0` and `fns = 0`
+        recalls[self.fns() == 0] = 1
+
+        return recalls
+
+    def APs(self) -> Tensor:
+        """
+        Calculate the average precision on a per-class basis at various confidence and
+        IoU thresholds.
+
+        Returns
+        -------
+        APs:
+            A tensor shaped as `(num_ious, num_classes)` with each entry representing
+            the corresponding `(iou, class)` pairs's average precision.
+        """
+        # Calculate the precision and recall - ensure that they are ordered such that
+        # the recall increases with index
+        precisions = self.precisions().flip(dims=(0,))
+        recalls = self.recalls().flip(dims=(0,))
+
+        # Calculate the difference between successive recall values along the PR-curve
+        recall_diffs = recalls.diff(
+            dim=0,
+            prepend=torch.zeros(
+                (1, recalls.shape[1], recalls.shape[2]),
+                dtype=recalls.dtype,
+                device=recalls.device,
+            ),
+        )
+
+        # Find the mid point of the precision values for each recall range
+        prepended_precisions = torch.ones(
+            (precisions.shape[0] + 1, precisions.shape[1], precisions.shape[2]),
+            dtype=precisions.dtype,
+            device=precisions.device,
+        )
+        prepended_precisions[1:, :, :] = precisions
+        precision_diffs = prepended_precisions.diff(dim=0)
+        mid_precision = prepended_precisions[:-1, :, :] + precision_diffs / 2
+
+        return (mid_precision * recall_diffs).sum(dim=0)
