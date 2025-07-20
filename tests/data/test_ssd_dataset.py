@@ -154,9 +154,9 @@ class TestSSDDataset:
 
         # Check the contents is correct
         assert objects.boxes.device == device
-        assert objects.class_ids.device == device
+        assert objects.class_ids_with_background.device == device
         assert objects.boxes.shape == (2, 4)
-        assert objects.class_ids.shape == (2,)
+        assert objects.class_ids_with_background.shape == (2,)
 
     def test_get_item(self, device: torch.device):
         """
@@ -197,8 +197,8 @@ class TestSSDDataset:
         assert 0 <= image.max() <= 1
         assert isinstance(objects, FrameLabels)
         assert objects.boxes.device == device
-        assert objects.class_ids.device == device
+        assert objects.class_ids_with_background.device == device
         assert objects.boxes.dtype == dtype
-        assert objects.class_ids.dtype == torch.int
+        assert objects.class_ids_with_background.dtype == torch.int
         assert objects.boxes.shape == (1, 4)
-        assert objects.class_ids.shape == (1,)
+        assert objects.class_ids_with_background.shape == (1,)

@@ -8,7 +8,7 @@ if __name__ == "__main__":
     # Define the training configuration
     coco_dir = Path("/mnt/data/datasets/object_detection/coco/")
     model_file = Path(
-        "/mnt/data/code/ssd/models/f8cc29d1-7372-4985-97cf-d2bdd8aaab0a/last.pt"
+        "/mnt/data/code/ssd/models/23ac32e7-5881-4f99-87a5-3b556464f721/last.pt"
     )
     train_config = TrainConfig(
         lr0=2e-6,

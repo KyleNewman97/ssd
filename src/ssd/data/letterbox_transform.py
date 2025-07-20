@@ -75,7 +75,9 @@ class LetterboxTransform(nn.Module):
             out_boxes[:, 0::2] *= params.new_width / self.desired_width
             out_boxes[:, 0] += params.y_end / self.desired_width
 
-        return FrameLabels(boxes=out_boxes, class_ids=objects.class_ids)
+        return FrameLabels(
+            boxes=out_boxes, class_ids_with_background=objects.class_ids_with_background
+        )
 
     def __call__(
         self, image: Tensor, objects: FrameLabels, device: torch.device

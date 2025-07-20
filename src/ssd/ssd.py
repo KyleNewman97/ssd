@@ -443,12 +443,12 @@ class SSD(nn.Module, MetaLogger):
             image_gt_classes = torch.zeros(
                 (image_class_logits.shape[0],),
                 device=self.device,
-                dtype=image_class_logits.dtype,
+                dtype=torch.int,
             )
-            image_gt_classes[image_matching_anchor_idxs] = image_gt_objects.class_ids[
-                image_matching_gt_idxs
-            ]
-            total_num_objects += image_gt_objects.class_ids.numel()
+            image_gt_classes[image_matching_anchor_idxs] = (
+                image_gt_objects.class_ids_with_background[image_matching_gt_idxs]
+            )
+            total_num_objects += image_gt_objects.class_ids_with_background.numel()
 
             gt_classes_list.append(image_gt_classes)
         gt_classes = torch.stack(gt_classes_list, dim=0)

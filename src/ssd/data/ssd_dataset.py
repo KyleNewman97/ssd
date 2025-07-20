@@ -201,7 +201,7 @@ class SSDDataset(Dataset, MetaLogger):
             for dim_idx in range(len(box)):
                 boxes_tensor[idx, dim_idx] = box[dim_idx]
 
-        return FrameLabels(boxes=boxes_tensor, class_ids=cls_ids_tensor)
+        return FrameLabels(boxes=boxes_tensor, class_ids_with_background=cls_ids_tensor)
 
     def __len__(self):
         return len(self.samples)

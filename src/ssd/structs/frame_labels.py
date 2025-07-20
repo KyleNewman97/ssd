@@ -14,10 +14,17 @@ class FrameLabels(BaseModel):
             "values are normalised between 0 and 1."
         )
     )
-    class_ids: Tensor = Field(
+    class_ids_with_background: Tensor = Field(
         description=(
             "The class IDs of objects. This will have a shape of `(num_objects,)`."
         )
     )
+
+    @property
+    def class_ids(self) -> Tensor:
+        """
+        The class IDs with no background class.
+        """
+        return self.class_ids_with_background - 1
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

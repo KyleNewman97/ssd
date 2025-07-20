@@ -59,8 +59,8 @@ class TestLetterboxTransform:
         expected_boxes = torch.tensor(
             [[0.5358, 0.4950, 0.3483, 0.4038]], dtype=dtype, device=device
         )
-        assert out_objects.class_ids.device == device
+        assert out_objects.class_ids_with_background.device == device
         assert out_objects.boxes.device == device
         assert out_objects.boxes.dtype == dtype
-        assert out_objects.class_ids.equal(expected_class_ids)
+        assert out_objects.class_ids_with_background.equal(expected_class_ids)
         assert out_objects.boxes.allclose(expected_boxes, rtol=0.001)
