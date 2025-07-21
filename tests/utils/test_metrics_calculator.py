@@ -651,3 +651,38 @@ class TestMetricsCalculator:
         assert APs.shape == expected_shape
         expected_APs = torch.tensor([[0.5]], dtype=dtype, device=device)
         assert APs.allclose(expected_APs)
+
+    def test_mAPs(self, mocker: MockerFixture):
+        """
+        Test that we can calculate the mAP correctly.
+        """
+        dtype = torch.float32
+        device = torch.device("cpu")
+
+        # Create dummy precision and recalls
+        precisions = torch.tensor(
+            [[[0.0]], [[0.2]], [[0.4]], [[0.6]], [[0.8]], [[1.0]]],
+            dtype=dtype,
+            device=device,
+        )
+        recalls = torch.tensor(
+            [[[1.0]], [[0.8]], [[0.6]], [[0.4]], [[0.2]], [[0.0]]],
+            dtype=dtype,
+            device=device,
+        )
+        mocker.patch.object(MetricsCalculator, "precisions", return_value=precisions)
+        mocker.patch.object(MetricsCalculator, "recalls", return_value=recalls)
+
+        # Calculate mAP
+        num_classes = 1
+        iou_thresholds = [0.24]
+        conf_thresholds = [0.1 * (i + 1) for i in range(6)]
+        metrics = MetricsCalculator(num_classes, iou_thresholds, conf_thresholds)
+        APs = metrics.APs()
+
+        # Check the output is correct
+        assert isinstance(APs, Tensor)
+        expected_shape = (len(iou_thresholds), num_classes)
+        assert APs.shape == expected_shape
+        expected_APs = torch.tensor([0.5], dtype=dtype, device=device)
+        assert APs.allclose(expected_APs)

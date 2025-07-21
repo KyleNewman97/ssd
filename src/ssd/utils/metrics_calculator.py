@@ -252,8 +252,7 @@ class MetricsCalculator(MetaLogger):
 
     def APs(self) -> Tensor:
         """
-        Calculate the average precision on a per-class basis at various confidence and
-        IoU thresholds.
+        Calculate the average precision on a per-class basis at various IoU thresholds.
 
         Returns
         -------
@@ -287,3 +286,16 @@ class MetricsCalculator(MetaLogger):
         mid_precision = prepended_precisions[:-1, :, :] + precision_diffs / 2
 
         return (mid_precision * recall_diffs).sum(dim=0)
+
+    def mAPs(self) -> Tensor:
+        """
+        Calculate the mean average precision on a per class basis.
+
+        Returns
+        -------
+        APs:
+            A tensor shaped as `(num_classes,)` with each entry being the mAP associated
+            with the class.
+        """
+        APs = self.APs()
+        return APs.mean(dim=0)
