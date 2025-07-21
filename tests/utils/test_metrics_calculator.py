@@ -531,6 +531,7 @@ class TestMetricsCalculator:
         iou_thresholds = [0.24, 0.26]
         conf_thresholds = [0.4, 0.55]
         metrics = MetricsCalculator(num_classes, iou_thresholds, conf_thresholds)
+        metrics._device = device
 
         # Create dummy data
         shape = (len(conf_thresholds), len(iou_thresholds), num_classes)
@@ -556,6 +557,7 @@ class TestMetricsCalculator:
         iou_thresholds = [0.24]
         conf_thresholds = [0.4]
         metrics = MetricsCalculator(num_classes, iou_thresholds, conf_thresholds)
+        metrics._device = device
 
         # Create dummy data
         tps = torch.tensor([[[0]]], dtype=torch.int, device=device)
@@ -579,6 +581,7 @@ class TestMetricsCalculator:
         iou_thresholds = [0.24, 0.26]
         conf_thresholds = [0.4, 0.55]
         metrics = MetricsCalculator(num_classes, iou_thresholds, conf_thresholds)
+        metrics._device = device
 
         # Create dummy data
         shape = (len(conf_thresholds), len(iou_thresholds), num_classes)
@@ -604,6 +607,7 @@ class TestMetricsCalculator:
         iou_thresholds = [0.24]
         conf_thresholds = [0.4]
         metrics = MetricsCalculator(num_classes, iou_thresholds, conf_thresholds)
+        metrics._device = device
 
         # Create dummy data
         tps = torch.tensor([[[0]]], dtype=torch.int, device=device)

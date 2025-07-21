@@ -29,6 +29,8 @@ class MetricsCalculator(MetaLogger):
         self._fps: Tensor | None = None
         self._fns: Tensor | None = None
 
+        self._device: torch.device | None = None
+
     def update(
         self, frame_detections: list[FrameDetections], frame_labels: list[FrameLabels]
     ):
@@ -36,6 +38,9 @@ class MetricsCalculator(MetaLogger):
         self._tps, self._fps, self._fns = None, None, None
 
         for detections, labels in zip(frame_detections, frame_labels):
+            # Set the device to be used
+            self._device = detections.boxes.device
+
             detection_xyxy_boxes = box_convert(detections.boxes, "cxcywh", "xyxy")
             label_xyxy_boxes = box_convert(labels.boxes, "cxcywh", "xyxy")
 
@@ -79,6 +84,9 @@ class MetricsCalculator(MetaLogger):
             A tensor shaped as `(num_confs, num_ious, num_classes)` with each entry
             representing the corresponding `(conf, iou, class)` tuple's TP count.
         """
+        if self._device is None:
+            raise RuntimeError("Unable to infer which device to place tensors on.")
+
         if self._tps is not None:
             return self._tps
 
@@ -91,6 +99,7 @@ class MetricsCalculator(MetaLogger):
                 self._num_classes,
             ),
             dtype=torch.int,
+            device=self._device,
         )
 
         num_frames = len(self._frame_per_class_ious)
@@ -148,32 +157,37 @@ class MetricsCalculator(MetaLogger):
             A tensor shaped as `(num_confs, num_ious, num_classes)` with each entry
             representing the corresponding `(conf, iou, class)` tuple's FP count.
         """
+        if self._device is None:
+            raise RuntimeError("Unable to infer which device to place tensors on.")
+
         if self._fps is not None:
             return self._fps
 
         num_confs = len(self._confidence_thresholds)
         num_ious = len(self._iou_thresholds)
-        self._fps = torch.zeros(
+        num_detections = torch.zeros(
             (
                 num_confs,
                 num_ious,
                 self._num_classes,
             ),
             dtype=torch.int,
+            device=self._device,
         )
 
-        # Calculate the number of true positives
-        tps = self.tps()
-
-        # We can calculate the FPs using the equation FPs = NUM_DETS - TPs
+        # Calculate the number of detections
         for per_class_scores in self._frame_per_class_scores:
             for class_id in per_class_scores:
                 scores = per_class_scores[class_id]
                 for conf_idx, conf_threshold in enumerate(self._confidence_thresholds):
                     num_dets = (scores >= conf_threshold).sum()
-                    self._fps[conf_idx, :, class_id] += (
-                        num_dets - tps[conf_idx, :, class_id]
-                    )
+                    num_detections[conf_idx, :, class_id] += num_dets
+
+        # Calculate the number of true positives
+        tps = self.tps()
+
+        # We can calculate the number of false positives with `FPs = NUM_DETS - TPs`
+        self._fps = num_detections - tps
 
         return self._fps
 
@@ -187,28 +201,35 @@ class MetricsCalculator(MetaLogger):
             A tensor shaped as `(num_confs, num_ious, num_classes)` with each entry
             representing the corresponding `(conf, iou, class)` tuple's FN count.
         """
+        if self._device is None:
+            raise RuntimeError("Unable to infer which device to place tensors on.")
+
         if self._fns is not None:
             return self._fns
 
         num_confs = len(self._confidence_thresholds)
         num_ious = len(self._iou_thresholds)
-        self._fns = torch.zeros(
+        num_labels = torch.zeros(
             (
                 num_confs,
                 num_ious,
                 self._num_classes,
             ),
             dtype=torch.int,
+            device=self._device,
         )
+
+        # Calculate the number of labels
+        for per_class_label_count in self._frame_per_class_label_count:
+            for class_id in per_class_label_count:
+                count = per_class_label_count[class_id]
+                num_labels[:, :, class_id] += count
 
         # Calculate the number of true positives
         tps = self.tps()
 
-        # We can calculate the FNs using the equation FNs = NUM_LABELS - TPs
-        for per_class_label_count in self._frame_per_class_label_count:
-            for class_id in per_class_label_count:
-                count = per_class_label_count[class_id]
-                self._fns[:, :, class_id] += count - tps[:, :, class_id]
+        # We can calculate the number of false negatives with `FNs = NUM_LABS - TPs`
+        self._fns = num_labels - tps
 
         return self._fns
 
