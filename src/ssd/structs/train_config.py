@@ -1,4 +1,5 @@
 from pathlib import Path
+from uuid import uuid4
 
 import torch
 from pydantic import BaseModel, ConfigDict, Field
@@ -6,7 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class TrainConfig(BaseModel):
     num_epochs: int
-    log_dir: Path
     anchor_iou_threshold: float = Field(
         default=0.1,
         description=(
@@ -36,4 +36,19 @@ class TrainConfig(BaseModel):
     image_height: int = Field(default=300)
     dtype: torch.dtype = Field(default=torch.float32)
 
+    # Logging configuration
+    log_dir: Path
+    experiment_name: str = Field(default_factory=lambda: f"{uuid4()}")
+    project_name: str = Field(default="ssd")
+    team_name: str
+
+    # Metrics calculation
+    min_confidence_threshold: float = Field(default=0.1)
+    num_top_k: int = Field(default=200)
+    nms_iou_threshold: float = Field(default=0.4)
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @property
+    def experiment_dir(self) -> Path:
+        return self.log_dir / self.experiment_name

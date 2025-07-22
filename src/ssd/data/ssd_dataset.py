@@ -204,7 +204,7 @@ class SSDDataset(Dataset, MetaLogger):
         return FrameLabels(boxes=boxes_tensor, class_ids_with_background=cls_ids_tensor)
 
     def __len__(self):
-        return len(self.samples)
+        return 100
 
     def __getitem__(self, idx: int) -> tuple[Tensor, FrameLabels]:
         image_file, label_file = self.samples[idx]

@@ -17,7 +17,13 @@ from ssd.anchor_box_generator import AnchorBoxGenerator
 from ssd.data import LetterboxTransform, SSDDataset
 from ssd.ssd_backbone import SSDBackbone
 from ssd.structs import FrameDetections, FrameLabels, Losses, TrainConfig
-from ssd.utils import BoxUtils, MetaLogger, TrainUtils
+from ssd.utils import (
+    BoxUtils,
+    MetaLogger,
+    TrainUtils,
+    MetricsCalculator,
+    WeightsAndBiasesLogger,
+)
 
 
 class SSD(nn.Module, MetaLogger):
@@ -98,6 +104,10 @@ class SSD(nn.Module, MetaLogger):
         return head_outputs, anchors
 
     def fit(self, config: TrainConfig):
+        wand_logger = WeightsAndBiasesLogger(
+            config.team_name, config.project_name, config.experiment_name, config
+        )
+
         # Create the data loaders for training
         train_loader, val_loader = self._create_data_loaders(config)
 
@@ -117,9 +127,8 @@ class SSD(nn.Module, MetaLogger):
         )
 
         # Create summary writer (TensorBoard)
-        self.logger.info(f"Training model: {config.log_dir.name}")
-        config.log_dir.mkdir()
-        summary_writer = SummaryWriter(config.log_dir)
+        self.logger.info(f"Training model: {config.experiment_name}")
+        config.experiment_dir.mkdir()
 
         # Run over the training dataset
         best_val_loss = np.inf
@@ -171,11 +180,14 @@ class SSD(nn.Module, MetaLogger):
             # Run over the validation dataset
             self.eval()
             val_losses: list[Losses] = []
+            metrics = MetricsCalculator(config.num_classes)
             with torch.no_grad():
                 tqdm_iterator = tqdm(val_loader, ncols=88)
                 tqdm_iterator.set_description_str("Valid")
                 for images, objects in tqdm_iterator:
                     head_outputs, anchors = self.forward(images)
+
+                    # Compute loss
                     loss = self._compute_loss(
                         head_outputs,
                         anchors,
@@ -184,6 +196,17 @@ class SSD(nn.Module, MetaLogger):
                         config.box_loss_scaling_factor,
                     )
                     val_losses.append(loss)
+
+                    # Update metrics calculator
+                    detections = self._post_process_detections(
+                        head_outputs,
+                        anchors,
+                        config.min_confidence_threshold,
+                        config.num_top_k,
+                        config.nms_iou_threshold,
+                    )
+                    metrics.update(detections, objects)
+
                 tqdm_iterator.close()
 
             # Calculate metrics
@@ -195,23 +218,25 @@ class SSD(nn.Module, MetaLogger):
             self.logger.info(f"Train cls_loss={t_class_loss}, box_loss={t_box_loss}")
             self.logger.info(f"Val cls_loss={v_class_loss}, box_loss={v_box_loss}")
 
-            # Write metrics to tensorboard
-            summary_writer.add_scalar("Loss/train_class", t_class_loss, epoch)
-            summary_writer.add_scalar("Loss/train_box", t_box_loss, epoch)
-            summary_writer.add_scalar("Loss/val_class", v_class_loss, epoch)
-            summary_writer.add_scalar("Loss/val_box", v_box_loss, epoch)
-            summary_writer.add_scalar("Optim/lr", scheduler.get_last_lr()[0], epoch)
-            summary_writer.flush()
+            # Write metrics to W&Bs
+            wand_logger.log_epoch(
+                epoch,
+                float(t_class_loss),
+                float(t_box_loss),
+                float(v_class_loss),
+                float(v_box_loss),
+                scheduler.get_last_lr()[0],
+                metrics,
+            )
 
             # Save the model
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 self.logger.info("Saving new best model.")
-                self.save(config.log_dir / "best.pt")
-            self.save(config.log_dir / "last.pt")
+                self.save(config.experiment_dir / "best.pt")
+            self.save(config.experiment_dir / "last.pt")
 
-        # Clean up at the end of training
-        summary_writer.close()
+        wand_logger.close()
 
     def infer(
         self,

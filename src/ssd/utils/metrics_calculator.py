@@ -320,3 +320,33 @@ class MetricsCalculator(MetaLogger):
         """
         APs = self.APs()
         return APs.mean(dim=0)
+
+    def summary_precisions(self) -> tuple[np.ndarray, float, float]:
+        """
+        Calculates the precisions per class at the lowest IoU threshold and a mid range
+        confidence threshold.
+        """
+        precisions = self.precisions()
+
+        conf_idx = precisions.shape[0] // 2
+        iou_idx = 0
+        return (
+            precisions[conf_idx, iou_idx, :].cpu().numpy(),
+            self._confidence_thresholds[conf_idx],
+            self._iou_thresholds[iou_idx],
+        )
+
+    def summary_recalls(self) -> tuple[np.ndarray, float, float]:
+        """
+        Calculates the recalls per class at the lowest IoU threshold and a mid range
+        confidence threshold.
+        """
+        recalls = self.recalls()
+
+        conf_idx = recalls.shape[0] // 2
+        iou_idx = 0
+        return (
+            recalls[conf_idx, iou_idx, :].cpu().numpy(),
+            self._confidence_thresholds[conf_idx],
+            self._iou_thresholds[iou_idx],
+        )
