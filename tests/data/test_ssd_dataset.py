@@ -49,7 +49,13 @@ class TestSSDDataset:
         # Try to initialise the dataset
         transform = LetterboxTransform()
         dataset = SSDDataset(
-            self.images_path, self.labels_path, 2, transform, device, torch.float32
+            self.images_path,
+            self.labels_path,
+            2,
+            transform,
+            None,
+            device,
+            torch.float32,
         )
         assert isinstance(dataset, SSDDataset)
         assert len(dataset) == 1
@@ -68,7 +74,13 @@ class TestSSDDataset:
         # Try to initialise the dataset
         transform = LetterboxTransform()
         dataset = SSDDataset(
-            self.images_path, self.labels_path, 2, transform, device, torch.float32
+            self.images_path,
+            self.labels_path,
+            2,
+            transform,
+            None,
+            device,
+            torch.float32,
         )
         assert isinstance(dataset, SSDDataset)
         assert len(dataset) == 0
@@ -90,7 +102,13 @@ class TestSSDDataset:
         # Try to initialise the dataset
         transform = LetterboxTransform()
         dataset = SSDDataset(
-            self.images_path, self.labels_path, 2, transform, device, torch.float32
+            self.images_path,
+            self.labels_path,
+            2,
+            transform,
+            None,
+            device,
+            torch.float32,
         )
         assert isinstance(dataset, SSDDataset)
         assert len(dataset) == 0
@@ -112,7 +130,13 @@ class TestSSDDataset:
         # Try to initialise the dataset
         transform = LetterboxTransform()
         dataset = SSDDataset(
-            self.images_path, self.labels_path, 2, transform, device, torch.float32
+            self.images_path,
+            self.labels_path,
+            2,
+            transform,
+            None,
+            device,
+            torch.float32,
         )
         assert isinstance(dataset, SSDDataset)
         assert len(dataset) == 0
@@ -134,7 +158,13 @@ class TestSSDDataset:
         # Try to initialise the dataset
         transform = LetterboxTransform()
         dataset = SSDDataset(
-            self.images_path, self.labels_path, 2, transform, device, torch.float32
+            self.images_path,
+            self.labels_path,
+            2,
+            transform,
+            None,
+            device,
+            torch.float32,
         )
         assert isinstance(dataset, SSDDataset)
         assert len(dataset) == 0
@@ -183,6 +213,7 @@ class TestSSDDataset:
             self.labels_path,
             num_classes,
             transform,
+            None,
             device,
             torch.float32,
         )
