@@ -6,26 +6,27 @@ on:
   pull_request:
     branches: [main]
 
+permissions: read-all
+
 jobs:
-  jobs:
-    test:
-      runs-on: ubuntu-latest
+  test:
+    runs-on: ubuntu-latest
 
-      steps:
-        - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-        - name: Set up Python
-          uses: actions/setup-python@v5
-          with:
-            python-version: "3.11"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-        - name: Install PDM
-          run: curl -sSL https://pdm-project.org/install-pdm.py | python -
+      - name: Install PDM
+        run: curl -sSL https://pdm-project.org/install-pdm.py | python -
 
-        - name: Install dependencies
-          run: |
-            pdm install -d
+      - name: Install dependencies
+        run: |
+          pdm install -d
 
-        - name: Run tests
-          run: |
-            pytest tests/
+      - name: Run tests
+        run: |
+          pytest tests/
