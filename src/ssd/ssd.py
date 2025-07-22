@@ -1,10 +1,10 @@
 from functools import partial
 from pathlib import Path
 
-import torch
 import numpy as np
+import torch
 from PIL import Image
-from torch import nn, Tensor
+from torch import Tensor, nn
 from torch.nn.functional import cross_entropy, smooth_l1_loss, softmax
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ChainedScheduler, CosineAnnealingLR, LinearLR
@@ -19,8 +19,8 @@ from ssd.structs import FrameDetections, FrameLabels, Losses, TrainConfig
 from ssd.utils import (
     BoxUtils,
     MetaLogger,
-    TrainUtils,
     MetricsCalculator,
+    TrainUtils,
     WeightsAndBiasesLogger,
 )
 
@@ -434,6 +434,7 @@ class SSD(nn.Module, MetaLogger):
             matching_gt_idxs,
             gt_objects,
             anchors,
+            strict=False,
         ):
             # Find the predicted boxes in the regression domain
             matched_pred_boxes_regression_domain = image_pred_boxes_regression_domain[
@@ -467,7 +468,13 @@ class SSD(nn.Module, MetaLogger):
             image_matching_anchor_idxs,
             image_matching_gt_idxs,
             image_gt_objects,
-        ) in zip(pred_class_logits, matching_anchor_idxs, matching_gt_idxs, gt_objects):
+        ) in zip(
+            pred_class_logits,
+            matching_anchor_idxs,
+            matching_gt_idxs,
+            gt_objects,
+            strict=False,
+        ):
             # Set the label for each anchor box
             image_gt_classes = torch.zeros(
                 (image_class_logits.shape[0],),

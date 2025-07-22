@@ -1,9 +1,8 @@
 from torch import Tensor
 from torchvision.transforms import v2
-from torchvision.tv_tensors import BoundingBoxes
 
-from ssd.structs import FrameLabels
 from ssd.data.remove_invalid_boxes_transform import RemoveInvalidBoxesTransform
+from ssd.structs import FrameLabels
 
 
 class DataAugmenter(v2.Compose):

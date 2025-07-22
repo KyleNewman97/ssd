@@ -1,4 +1,4 @@
-from torch import nn, Tensor
+from torch import Tensor, nn
 from torchvision.tv_tensors import BoundingBoxes, BoundingBoxFormat
 
 from ssd.structs import FrameLabels

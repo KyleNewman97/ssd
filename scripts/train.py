@@ -1,5 +1,4 @@
 from pathlib import Path
-from uuid import uuid4
 
 from ssd import SSD
 from ssd.structs import TrainConfig
@@ -15,7 +14,7 @@ if __name__ == "__main__":
         train_labels_dir=coco_dir / "labels/train2017",
         val_images_dir=coco_dir / "images/val2017",
         val_labels_dir=coco_dir / "labels/val2017",
-        log_dir=Path(f"/mnt/data/code/ssd/runs/"),
+        log_dir=Path("/mnt/data/code/ssd/runs/"),
         team_name="brrr",
     )
 

@@ -1,6 +1,6 @@
 import torch
 from pydantic import BaseModel
-from torch import nn, Tensor
+from torch import Tensor, nn
 from torchvision.transforms.functional import resize
 
 from ssd.structs import FrameLabels

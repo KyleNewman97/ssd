@@ -2,13 +2,24 @@
 name = "ssd"
 version = "0.1.0"
 description = "Re-implementation of the SSD network."
-authors = [
-    {name = "KyleNewman97", email = "kyle@thenewmans.com.au"},
+authors = [{ name = "KyleNewman97", email = "kyle@thenewmans.com.au" }]
+dependencies = [
+  "torch>=2.7.1",
+  "torchvision>=0.22.1",
+  "notebook>=7.4.3",
+  "pydantic>=2.11.7",
+  "matplotlib>=3.10.3",
+  "opencv-python>=4.11.0.86",
+  "tqdm>=4.67.1",
+  "tensorboard>=2.19.0",
+  "torch-tb-profiler>=0.4.3",
+  "torchmetrics>=1.7.4",
+  "pycocotools>=2.0.10",
+  "wandb>=0.21.0",
 ]
-dependencies = ["torch>=2.7.1", "torchvision>=0.22.1", "notebook>=7.4.3", "pydantic>=2.11.7", "matplotlib>=3.10.3", "opencv-python>=4.11.0.86", "tqdm>=4.67.1", "tensorboard>=2.19.0", "torch-tb-profiler>=0.4.3", "torchmetrics>=1.7.4", "pycocotools>=2.0.10", "wandb>=0.21.0", "pytest-mock>=3.14.1"]
 requires-python = ">=3.11"
 readme = "README.md"
-license = {text = "MIT"}
+license = { text = "MIT" }
 
 [build-system]
 requires = ["pdm-backend"]
@@ -19,7 +30,4 @@ build-backend = "pdm.backend"
 distribution = true
 
 [dependency-groups]
-dev = [
-    "pytest>=8.4.1",
-    "notebook>=7.4.3",
-]
+dev = ["pytest>=8.4.1", "notebook>=7.4.3", "pytest-mock>=3.14.1"]

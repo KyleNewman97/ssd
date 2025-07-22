@@ -1,5 +1,4 @@
 import wandb
-
 from ssd.structs import TrainConfig
 from ssd.utils.metrics_calculator import MetricsCalculator
 

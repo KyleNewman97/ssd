@@ -1,5 +1,5 @@
-import torch
 import numpy as np
+import torch
 from torch import Tensor
 from torchvision.ops import box_convert, box_iou
 from tqdm import tqdm
@@ -12,10 +12,15 @@ class MetricsCalculator(MetaLogger):
     def __init__(
         self,
         num_classes: int,
-        iou_thresholds: np.ndarray | list[float] = np.linspace(0.5, 0.95, 10),
-        confidence_thresholds: np.ndarray | list[float] = np.linspace(0.1, 1, 10),
+        iou_thresholds: np.ndarray | list[float] | None = None,
+        confidence_thresholds: np.ndarray | list[float] | None = None,
     ):
         MetaLogger.__init__(self)
+
+        if iou_thresholds is None:
+            iou_thresholds = np.linspace(0.5, 0.95, 10)
+        if confidence_thresholds is None:
+            confidence_thresholds = np.linspace(0.1, 1, 10)
 
         self._num_classes = num_classes
         self._iou_thresholds = iou_thresholds
@@ -37,7 +42,7 @@ class MetricsCalculator(MetaLogger):
         # On update ensure TPs, FPs and FNs are marked as out of date
         self._tps, self._fps, self._fns = None, None, None
 
-        for detections, labels in zip(frame_detections, frame_labels):
+        for detections, labels in zip(frame_detections, frame_labels, strict=False):
             # Set the device to be used
             self._device = detections.boxes.device
 
@@ -103,7 +108,9 @@ class MetricsCalculator(MetaLogger):
         )
 
         num_frames = len(self._frame_per_class_ious)
-        frame_iterator = zip(self._frame_per_class_ious, self._frame_per_class_scores)
+        frame_iterator = zip(
+            self._frame_per_class_ious, self._frame_per_class_scores, strict=False
+        )
         frame_iterator = tqdm(frame_iterator, ncols=88, total=num_frames)
         # Loop over frames
         for per_class_ious, per_class_scores in frame_iterator:
@@ -134,7 +141,9 @@ class MetricsCalculator(MetaLogger):
                         tps = 0
                         matched_dets, matched_labs = set(), set()
                         idx_iterator = zip(
-                            det_idxs.cpu().tolist(), lab_idxs.cpu().tolist()
+                            det_idxs.cpu().tolist(),
+                            lab_idxs.cpu().tolist(),
+                            strict=False,
                         )
                         for det_idx, lab_idx in idx_iterator:
                             if det_idx in matched_dets or lab_idx in matched_labs:

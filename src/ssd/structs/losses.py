@@ -1,5 +1,5 @@
-from torch import Tensor
 from pydantic import BaseModel, ConfigDict
+from torch import Tensor
 
 
 class Losses(BaseModel):

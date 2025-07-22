@@ -2,8 +2,6 @@ import torch
 from torch import Tensor
 from torchvision.ops import box_convert, box_iou, nms
 
-from ssd.structs import FrameLabels
-
 
 class BoxUtils:
     @staticmethod

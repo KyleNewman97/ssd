@@ -1,10 +1,10 @@
 from pathlib import Path
 
-import torch
 import matplotlib.pyplot as plt
 import numpy as np
-from torchvision.transforms.functional import pil_to_tensor
+import torch
 from PIL import Image
+from torchvision.transforms.functional import pil_to_tensor
 
 from ssd import SSD
 from ssd.data import LetterboxTransform

@@ -2,9 +2,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 from PIL import Image
 from torch import Tensor
 

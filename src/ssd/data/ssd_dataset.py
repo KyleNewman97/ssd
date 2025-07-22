@@ -4,8 +4,8 @@ import torch
 from PIL import Image
 from torch import Tensor
 from torch.utils.data import Dataset
-from torchvision.transforms.functional import pil_to_tensor
 from torchvision.transforms import v2
+from torchvision.transforms.functional import pil_to_tensor
 
 from ssd.data.letterbox_transform import LetterboxTransform
 from ssd.structs import FrameLabels
@@ -83,8 +83,8 @@ class SSDDataset(Dataset, MetaLogger):
         samples:
             A list of samples. Each sample is structured as `(image_file, label_file)`.
         """
-        stem_to_image_file = {i.stem: i for i in images}
-        stem_to_label_file = {l.stem: l for l in labels}
+        stem_to_image_file = {im.stem: im for im in images}
+        stem_to_label_file = {lab.stem: lab for lab in labels}
 
         samples: list[tuple[Path, Path]] = []
 
@@ -202,7 +202,7 @@ class SSDDataset(Dataset, MetaLogger):
         # Put the labels into a tensor
         cls_ids_tensor = torch.zeros((len(cls_ids),), dtype=torch.int, device=device)
         boxes_tensor = torch.zeros((len(boxes), 4), dtype=dtype, device=device)
-        for idx, (cls_id, box) in enumerate(zip(cls_ids, boxes)):
+        for idx, (cls_id, box) in enumerate(zip(cls_ids, boxes, strict=False)):
             cls_ids_tensor[idx] = cls_id
             for dim_idx in range(len(box)):
                 boxes_tensor[idx, dim_idx] = box[dim_idx]

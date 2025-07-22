@@ -1,5 +1,4 @@
 import torch
-
 from torch import Tensor
 
 from ssd.anchor_box_generator import AnchorBoxGenerator
@@ -34,7 +33,9 @@ class TestAnchorBoxGenerator:
         Calculates the expected number of anchor boxes to be generated.
         """
         expected_boxes = 0
-        for grid_size, aspect_ratios in zip(feature_map_sizes, all_aspect_ratios):
+        for grid_size, aspect_ratios in zip(
+            feature_map_sizes, all_aspect_ratios, strict=False
+        ):
             expected_boxes += grid_size[0] * grid_size[1] * len(aspect_ratios)
 
         return expected_boxes
