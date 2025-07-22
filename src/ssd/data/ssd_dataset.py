@@ -5,6 +5,7 @@ from PIL import Image
 from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision.transforms.functional import pil_to_tensor
+from torchvision.transforms import v2
 
 from ssd.data.letterbox_transform import LetterboxTransform
 from ssd.structs import FrameLabels
@@ -18,6 +19,7 @@ class SSDDataset(Dataset, MetaLogger):
         labels_path: Path,
         num_classes: int,
         transform: LetterboxTransform | None,
+        augmenter: v2.Compose | None,
         device: torch.device,
         dtype: torch.dtype,
     ):
@@ -36,6 +38,9 @@ class SSDDataset(Dataset, MetaLogger):
         transform:
             The transform to apply to the images after they are loaded in.
 
+        augmenter:
+            Defines the augmentations to apply to the images/boxes.
+
         device:
             The device that the tensors should be stored on.
 
@@ -49,6 +54,7 @@ class SSDDataset(Dataset, MetaLogger):
         self.labels_path = labels_path
         self.num_classes = num_classes
         self.transform = transform
+        self.augmenter = augmenter
         self.device = device
         self.dtype = dtype
 
@@ -221,7 +227,8 @@ class SSDDataset(Dataset, MetaLogger):
         if image.shape[0] == 1:
             image = image.repeat((3, 1, 1))
 
-        if self.transform is None:
-            return image, objects
-        else:
-            return self.transform(image, objects, self.device)
+        if self.transform is not None:
+            image, objects = self.transform(image, objects, self.device)
+        if self.augmenter is not None:
+            image, objects = self.augmenter(image, objects)
+        return image, objects

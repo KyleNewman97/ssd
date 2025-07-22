@@ -9,12 +9,11 @@ from torch.nn.functional import cross_entropy, smooth_l1_loss, softmax
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ChainedScheduler, CosineAnnealingLR, LinearLR
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms.functional import pil_to_tensor
 from tqdm import tqdm
 
 from ssd.anchor_box_generator import AnchorBoxGenerator
-from ssd.data import LetterboxTransform, SSDDataset
+from ssd.data import DataAugmenter, LetterboxTransform, SSDDataset
 from ssd.ssd_backbone import SSDBackbone
 from ssd.structs import FrameDetections, FrameLabels, Losses, TrainConfig
 from ssd.utils import (
@@ -309,6 +308,9 @@ class SSD(nn.Module, MetaLogger):
             config.image_width, config.image_height, config.dtype
         )
 
+        # Create training data augmenter
+        augmenter = DataAugmenter(config.image_width, config.image_height)
+
         # Create the collate function
         collate_func = partial(TrainUtils.batch_collate_func, device=self.device)
 
@@ -318,6 +320,7 @@ class SSD(nn.Module, MetaLogger):
             config.train_labels_dir,
             config.num_classes,
             transform,
+            augmenter,
             self.device,
             config.dtype,
         )
@@ -331,6 +334,7 @@ class SSD(nn.Module, MetaLogger):
             config.val_labels_dir,
             config.num_classes,
             transform,
+            None,
             self.device,
             config.dtype,
         )

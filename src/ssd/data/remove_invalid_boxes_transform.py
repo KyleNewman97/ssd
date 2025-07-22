@@ -1,6 +1,8 @@
 from torch import nn, Tensor
 from torchvision.tv_tensors import BoundingBoxes, BoundingBoxFormat
 
+from ssd.structs import FrameLabels
+
 
 class RemoveInvalidBoxesTransform(nn.Module):
     """
@@ -8,8 +10,8 @@ class RemoveInvalidBoxesTransform(nn.Module):
     """
 
     def forward(
-        self, image: Tensor, boxes: BoundingBoxes
-    ) -> tuple[Tensor, BoundingBoxes]:
+        self, image: Tensor, boxes: BoundingBoxes, class_ids_with_background: Tensor
+    ) -> tuple[Tensor, FrameLabels]:
         if boxes.format != BoundingBoxFormat.CXCYWH:
             raise ValueError(f"Expected box format of cxcywh but got {boxes.format}.")
 
@@ -17,9 +19,11 @@ class RemoveInvalidBoxesTransform(nn.Module):
         cleaned_boxes = boxes.clone()
         mask = (cleaned_boxes[:, 2] > 1).bitwise_and(cleaned_boxes[:, 3] > 1)
         cleaned_boxes = cleaned_boxes[mask, :]
+        cleaned_class_ids = class_ids_with_background[mask]
 
-        out_boxes = BoundingBoxes(
-            cleaned_boxes, format=boxes.format, canvas_size=boxes.canvas_size
-        )  # type: ignore
+        labels = FrameLabels(
+            boxes=cleaned_boxes,
+            class_ids_with_background=cleaned_class_ids,
+        )
 
-        return image, out_boxes
+        return image, labels

@@ -4,6 +4,7 @@ from torch import Tensor
 from torchvision.tv_tensors import BoundingBoxes, BoundingBoxFormat
 
 from ssd.data import RemoveInvalidBoxesTransform
+from ssd.structs import FrameLabels
 
 
 class TestRemoveInvalidBoxesTransform:
@@ -30,17 +31,22 @@ class TestRemoveInvalidBoxesTransform:
             dtype=dtype,
             device=device,
         )  # type: ignore
+        class_ids = torch.tensor([0, 1], dtype=torch.int, device=device)
 
         transform = RemoveInvalidBoxesTransform()
-        out_image, out_boxes = transform.forward(image, boxes)
+        out_image, out_objects = transform.forward(image, boxes, class_ids)
 
         # Check the output is correct
         assert isinstance(out_image, Tensor)
         assert out_image.allclose(image)
-        assert isinstance(out_boxes, BoundingBoxes)
-        assert out_boxes.shape[0] == 1
-        assert out_boxes.allclose(
+        assert isinstance(out_objects, FrameLabels)
+        assert out_objects.boxes.shape[0] == 1
+        assert out_objects.boxes.allclose(
             torch.tensor([[10, 10, 20, 20]], dtype=dtype, device=device)
+        )
+        assert out_objects.class_ids_with_background.shape[0] == 1
+        assert out_objects.class_ids_with_background.equal(
+            torch.tensor([0], dtype=torch.int, device=device)
         )
 
     def test_forward_invalid_box_format(self):
@@ -59,8 +65,9 @@ class TestRemoveInvalidBoxesTransform:
             dtype=dtype,
             device=device,
         )  # type: ignore
+        class_ids = torch.tensor([0], dtype=torch.int, device=device)
 
         transform = RemoveInvalidBoxesTransform()
 
         with pytest.raises(ValueError):
-            transform.forward(image, boxes)
+            transform.forward(image, boxes, class_ids)
