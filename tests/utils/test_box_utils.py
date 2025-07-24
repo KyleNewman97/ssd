@@ -73,12 +73,17 @@ class TestBoxUtils:
         Test that we can find the anchor boxes that are closest to the ground truth
         boxes.
         """
+        dtype = torch.float32
+        device = torch.device("cpu")
+
         # Construct dummy inputs
-        anchors = torch.tensor([[[10, 10, 6, 6], [100, 100, 60, 60]]])
-        labels = [torch.tensor([[88, 120, 40, 40]])]
+        anchors = torch.tensor(
+            [[[10, 10, 6, 6], [100, 100, 60, 60]]], dtype=dtype, device=device
+        )
+        labels = [torch.tensor([[88, 120, 40, 40]], dtype=dtype, device=device)]
 
         # Try to find the best anchor box indices
-        best_anchor_indices = BoxUtils.find_indices_of_best_anchor_boxes(
+        best_anchor_indices, gt_indices = BoxUtils.find_indices_of_best_anchor_boxes(
             anchors, labels
         )
 
@@ -86,6 +91,9 @@ class TestBoxUtils:
         assert isinstance(best_anchor_indices, list)
         assert len(best_anchor_indices) == 1
         assert best_anchor_indices[0] == torch.tensor([1])
+        assert isinstance(gt_indices, list)
+        assert len(gt_indices) == 1
+        assert gt_indices[0].equal(torch.tensor([0], dtype=torch.int, device=device))
 
     def test_find_indices_of_best_anchor_boxes_representative(self):
         """
@@ -99,7 +107,7 @@ class TestBoxUtils:
         ground_truth = [torch.rand((num_objects, 4))] * batch_size
 
         # Try to find the best anchor box indices
-        best_anchor_indices = BoxUtils.find_indices_of_best_anchor_boxes(
+        best_anchor_indices, gt_indices = BoxUtils.find_indices_of_best_anchor_boxes(
             anchors, ground_truth
         )
 
@@ -107,6 +115,9 @@ class TestBoxUtils:
         assert isinstance(best_anchor_indices, list)
         assert len(best_anchor_indices) == batch_size
         assert best_anchor_indices[0].shape == (num_objects,)
+        assert isinstance(gt_indices, list)
+        assert len(gt_indices) == batch_size
+        assert gt_indices[0].shape == (num_objects,)
 
     def test_find_indicies_of_high_out_anchors(self):
         """

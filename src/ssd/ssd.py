@@ -132,7 +132,7 @@ class SSD(nn.Module, MetaLogger):
         # Run over the training dataset
         best_val_loss = np.inf
         train_losses: list[Losses] = []
-        num_train_losses = 4
+        num_train_losses = 100
         for epoch in range(config.num_epochs):
             self.logger.info(f"Epoch: {epoch}")
 
@@ -309,7 +309,7 @@ class SSD(nn.Module, MetaLogger):
         )
 
         # Create training data augmenter
-        augmenter = DataAugmenter(config.image_width, config.image_height)
+        DataAugmenter(config.image_width, config.image_height)
 
         # Create the collate function
         collate_func = partial(TrainUtils.batch_collate_func, device=self.device)
@@ -320,7 +320,7 @@ class SSD(nn.Module, MetaLogger):
             config.train_labels_dir,
             config.num_classes,
             transform,
-            augmenter,
+            None,
             self.device,
             config.dtype,
         )

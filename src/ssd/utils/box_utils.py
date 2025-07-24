@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import Tensor
 from torchvision.ops import box_convert, box_iou, nms
@@ -118,7 +119,7 @@ class BoxUtils:
     @staticmethod
     def find_indices_of_best_anchor_boxes(
         anchors: Tensor, ground_truth_boxes: list[Tensor]
-    ) -> list[Tensor]:
+    ) -> tuple[list[Tensor], list[Tensor]]:
         """
         Finds the indices of anchor boxes with the highest IoU to the ground truth
         boxes.
@@ -138,10 +139,13 @@ class BoxUtils:
 
         Returns
         -------
-        best_anchor_indicies:
-            The indicies of the anchor boxes that best match the ground truth boxes.
-            The number of elements in the list is `batch_size` with the tensor having
-            shape `(num_objects,)`.
+        best_anchor_indices:
+            The indices of the anchor boxes that best match the ground truth boxes. The
+            number of elements in the list is `batch_size` with the tensor having shape
+            `(num_objects,)`.
+
+        gt_indices:
+            The indices of the corresponding ground truth boxes.
         """
         # Check the batch size of the anchors matches that of the ground truth boxes
         if anchors.shape[0] != len(ground_truth_boxes):
@@ -152,6 +156,7 @@ class BoxUtils:
 
         # Determine which anchor boxes have the highest IoU with the labels
         best_anchor_indices: list[Tensor] = []
+        gt_indices: list[Tensor] = []
         batch_size = len(ground_truth_boxes)
         for idx in range(batch_size):
             # Calculate anchor box IoU
@@ -163,8 +168,16 @@ class BoxUtils:
 
             # Find which anchor box best fits the label
             best_anchor_indices.append(iou_matrix.max(dim=0).indices)
+            gt_indices.append(
+                torch.arange(
+                    0,
+                    image_ground_truth_boxes.shape[0],
+                    dtype=torch.int,
+                    device=image_ground_truth_boxes[0].device,
+                )
+            )
 
-        return best_anchor_indices
+        return best_anchor_indices, gt_indices
 
     @staticmethod
     def find_indices_of_high_iou_anchors(
@@ -193,13 +206,13 @@ class BoxUtils:
 
         Returns
         -------
-        matching_anchor_indicies:
-            The indicies of the anchor boxes that match the ground truth boxes. The
+        matching_anchor_indices:
+            The indices of the anchor boxes that match the ground truth boxes. The
             number of elements in the list is `batch_size` with the tensor having shape
             `(num_matching,)`.
 
-        matching_gt_indicies:
-            The indicies of the ground truth boxes that correspond to the matched anchor
+        matching_gt_indices:
+            The indices of the ground truth boxes that correspond to the matched anchor
             boxes. We need this because a single ground truth box can have multiple
             matching anchor boxes.
         """
@@ -211,28 +224,43 @@ class BoxUtils:
             )
 
         # Determine which anchor boxes have the highest IoU with the labels
-        matching_anchor_indicies: list[Tensor] = []
-        matching_gt_indicies: list[Tensor] = []
+        matching_anchor_indices: list[Tensor] = []
+        matching_gt_indices: list[Tensor] = []
         batch_size = len(ground_truth_boxes)
         for idx in range(batch_size):
             # Calculate anchor box IoU
             image_anchors = anchors[idx, ...]
-            image_ground_truth_boxes = ground_truth_boxes[idx]
+            image_gt_boxes = ground_truth_boxes[idx]
             image_anchors_xyxy = box_convert(image_anchors, "cxcywh", "xyxy")
-            image_gt_xyxy = box_convert(image_ground_truth_boxes, "cxcywh", "xyxy")
+            image_gt_xyxy = box_convert(image_gt_boxes, "cxcywh", "xyxy")
             iou_matrix = box_iou(image_anchors_xyxy, image_gt_xyxy)
 
-            # Find which anchor box best fits the label
-            max_ious, gt_indicies = iou_matrix.max(dim=1)
-            anchor_indicies_above_threshold = (
-                (max_ious > iou_threshold).nonzero().squeeze()
+            device = iou_matrix.device
+
+            # Find the anchor boxes above the IoU threshold with GT boxes
+            max_ious, gt_indices = iou_matrix.max(dim=1)
+            anchor_idxs_thresh = (max_ious > iou_threshold).nonzero().squeeze(dim=1)
+            gt_idxs_thresh = gt_indices[anchor_idxs_thresh]
+
+            # Find anchor boxes that best match each GT box
+            anchor_idxs_best = iou_matrix.max(dim=0).indices
+            gt_idxs_best = torch.arange(
+                0, image_gt_boxes.shape[0], dtype=torch.int, device=device
             )
-            gt_indicies_above_threshold = gt_indicies[anchor_indicies_above_threshold]
 
-            matching_anchor_indicies.append(anchor_indicies_above_threshold)
-            matching_gt_indicies.append(gt_indicies_above_threshold)
+            # Concat the two approaches
+            anchor_idxs_all = torch.cat((anchor_idxs_best, anchor_idxs_thresh))
+            gt_idxs_all = torch.cat((gt_idxs_best, gt_idxs_thresh))
 
-        return matching_anchor_indicies, matching_gt_indicies
+            # Find the first occurence of each anchor box
+            _, first_idxs = np.unique(anchor_idxs_all.cpu().numpy(), return_index=True)
+            anchor_idxs = anchor_idxs_all[first_idxs]
+            gt_idxs = gt_idxs_all[first_idxs]
+
+            matching_anchor_indices.append(anchor_idxs)
+            matching_gt_indices.append(gt_idxs)
+
+        return matching_anchor_indices, matching_gt_indices
 
     @staticmethod
     def nms(
@@ -277,3 +305,17 @@ class BoxUtils:
             torch.concat(nms_scores, dim=0),
             torch.concat(nms_labels, dim=0),
         )
+
+    @staticmethod
+    def boxes_within_norm_limits(boxes: Tensor) -> bool:
+        # Check for boxes outside the x limits
+        below_x = boxes[:, 0] < 0
+        above_x = boxes[:, 0] > 1
+        num_outside_x = int(below_x.bitwise_or(above_x).count_nonzero().item())
+
+        # Check for boxes outside the y limits
+        below_y = boxes[:, 1] < 0
+        above_y = boxes[:, 1] > 1
+        num_outside_y = int(below_y.bitwise_or(above_y).count_nonzero().item())
+
+        return num_outside_x == 0 and num_outside_y == 0
