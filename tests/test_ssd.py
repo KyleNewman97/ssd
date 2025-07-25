@@ -98,6 +98,4 @@ class TestSSD:
         ]
 
         # Try to post-process the detections
-        all_frame_detections = model._compute_loss(
-            head_outputs, anchors, gt_objects, 0.3, 0.05, 1
-        )
+        model._compute_loss(head_outputs, anchors, gt_objects, 0.3, 0.05, 1)
