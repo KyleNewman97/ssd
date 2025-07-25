@@ -6,9 +6,6 @@ from ssd.structs import TrainConfig
 if __name__ == "__main__":
     # Define the training configuration
     coco_dir = Path("/mnt/data/datasets/object_detection/coco/")
-    model_path = Path(
-        "/mnt/data/code/ssd/runs/03012430-2195-4e73-b209-4aa6b731e687/last.pt"
-    )
     train_config = TrainConfig(
         lr0=2e-6,
         num_epochs=100,
@@ -21,5 +18,5 @@ if __name__ == "__main__":
         team_name="brrr",
     )
 
-    model = SSD.load(model_path)
+    model = SSD(train_config.num_classes)
     model.fit(train_config)

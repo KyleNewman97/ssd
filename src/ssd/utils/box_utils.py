@@ -180,12 +180,91 @@ class BoxUtils:
         return best_anchor_indices, gt_indices
 
     @staticmethod
-    def find_indices_of_high_iou_anchors(
+    def find_anchors_meeting_iou_condition(
+        anchors: Tensor,
+        ground_truth_boxes: list[Tensor],
+        iou_threshold: float,
+        above: bool,
+    ) -> list[Tensor]:
+        """
+        Finds the indices of anchor boxes that match with GT boxes. An anchor matches
+        with a ground truth box if its IoU threshold is above/below the specified
+        threshold.
+
+        It should be noted that this method of matching does not gaurantee that all
+        ground truth boxes will be associated with an anchor box.
+
+        Parameters
+        ----------
+        anchors:
+            The anchor boxes for the network. This should have a shape of `(batch_size,
+            num_anchor_boxes, 4)`. The last dimensions should be structured as `(cx, cy,
+            w, h)`. The anchor boxes should be in the image's domain.
+
+        ground_truth_boxes:
+            The ground truth boxes associated with each image. These boxes are in the
+            image's domain. The number of elements in the list is equal to `batch_size`
+            and the size of the tensor is `(num_objects, 4)`. With the last dimension
+            being structured as `(cx, cy, w, h)`.
+
+        iou_threshold:
+            The IoU threshold to use in the comparison.
+
+        above:
+            Whether we want anchors above or below the IoU threshold.
+
+        Returns
+        -------
+        anchor_idxs:
+            The indices of the anchor boxes that IoU condition. The number of elements
+            in the list is `batch_size` with the tensor having shape `(num_matching,)`.
+        """
+        # Check the batch size of the anchors matches that of the ground truth boxes
+        if anchors.shape[0] != len(ground_truth_boxes):
+            raise ValueError(
+                f"Batch size mismatch: ABS={anchors.shape[0]} "
+                f"GTBS={len(ground_truth_boxes)}."
+            )
+
+        # Determine which anchor boxes meet the IoU condition
+        anchor_idxs: list[Tensor] = []
+        batch_size = len(ground_truth_boxes)
+        for idx in range(batch_size):
+            # Calculate anchor box IoU
+            image_anchors = anchors[idx, ...]
+            image_gt_boxes = ground_truth_boxes[idx]
+            image_anchors_xyxy = box_convert(image_anchors, "cxcywh", "xyxy")
+            image_gt_xyxy = box_convert(image_gt_boxes, "cxcywh", "xyxy")
+            iou_matrix = box_iou(image_anchors_xyxy, image_gt_xyxy)
+
+            # Find the anchor boxes above the IoU threshold with GT boxes
+            max_ious = iou_matrix.max(dim=1).values
+            if above:
+                image_anchor_idxs = (max_ious > iou_threshold).nonzero().squeeze(dim=1)
+            else:
+                image_anchor_idxs = (max_ious < iou_threshold).nonzero().squeeze(dim=1)
+
+            anchor_idxs.append(image_anchor_idxs)
+
+        return anchor_idxs
+
+    @staticmethod
+    def find_anchor_gt_pairs(
         anchors: Tensor, ground_truth_boxes: list[Tensor], iou_threshold: float
     ) -> tuple[list[Tensor], list[Tensor]]:
         """
-        Finds the indices of anchor boxes that have an IoU over the threshold with the
-        ground truth boxes.
+        Finds the indices of anchor boxes that match with GT boxes. There are two
+        conditions in which a match can be made:
+
+            1. An anchor box has an IoU threshold above the specified threshold with an
+                ground truth box.
+            2. An anchor box has the highest IoU with a ground truth box - without this
+                condition many ground truth boxes were getting missed.
+
+        It should be noted that this method of matching does not gaurantee that all
+        ground truth boxes will be associated with an anchor box. Specifically, if
+        ground truth boxes have high overlap then they will compete for anchor boxes and
+        can result in some ground truth boxes not getting an anchor.
 
         Parameters
         ----------

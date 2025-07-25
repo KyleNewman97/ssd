@@ -119,10 +119,35 @@ class TestBoxUtils:
         assert len(gt_indices) == batch_size
         assert gt_indices[0].shape == (num_objects,)
 
-    def test_find_indicies_of_high_out_anchors(self):
+    def test_find_anchor_meeting_iou_condition_below_match(self):
         """
-        Test that we can find the indicies of anchors (and the corresponding ground
-        truth boxes) that have an IoU above the specified threshold.
+        Test we can find anchors with an IoU (to GT boxes) below the threshold.
+        """
+        dtype = torch.float32
+        device = torch.device("cpu")
+
+        # Construct dummy inputs
+        anchors = torch.tensor(
+            [[[0.1, 0.1, 0.1, 0.1], [0.6, 0.6, 0.1, 0.1]]], dtype=dtype, device=device
+        )
+        labels = [
+            torch.tensor(
+                [[0.1, 0.1, 0.05, 0.05], [0.6, 0.6, 0.06, 0.06]],
+                dtype=dtype,
+                device=device,
+            )
+        ]
+
+        idxs = BoxUtils.find_anchors_meeting_iou_condition(anchors, labels, 0.26, False)
+
+        assert isinstance(idxs, list)
+        assert len(idxs) == 1
+        assert idxs[0].dtype == torch.int64
+        assert idxs[0].equal(torch.tensor([0], dtype=torch.int, device=device))
+
+    def test_find_anchor_gt_pairs(self):
+        """
+        Test that we can find anchor and ground truth pairs correctly
         """
         # Construct dummy inputs
         anchors = torch.tensor(
@@ -141,9 +166,7 @@ class TestBoxUtils:
             )
         ]
 
-        anchor_idxs, gt_idxs = BoxUtils.find_indices_of_high_iou_anchors(
-            anchors, labels, 0.1
-        )
+        anchor_idxs, gt_idxs = BoxUtils.find_anchor_gt_pairs(anchors, labels, 0.1)
 
         assert isinstance(anchor_idxs, list)
         assert len(anchor_idxs) == anchors.shape[0]

@@ -152,7 +152,8 @@ class SSD(nn.Module, MetaLogger):
                     head_outputs,
                     anchors,
                     objects,
-                    config.anchor_iou_threshold,
+                    config.anchor_match_iou_threshold,
+                    config.anchor_background_iou_threshold,
                     config.box_loss_scaling_factor,
                 )
 
@@ -191,7 +192,8 @@ class SSD(nn.Module, MetaLogger):
                         head_outputs,
                         anchors,
                         objects,
-                        config.anchor_iou_threshold,
+                        config.anchor_match_iou_threshold,
+                        config.anchor_background_iou_threshold,
                         config.box_loss_scaling_factor,
                     )
                     val_losses.append(loss)
@@ -404,16 +406,20 @@ class SSD(nn.Module, MetaLogger):
         anchors: Tensor,
         gt_objects: list[FrameLabels],
         matching_iou_threshold: float,
+        background_iou_threshold: float,
         box_loss_scaling_factor: float,
     ) -> Losses:
         """ """
 
         # Determine which anchor boxes have the highest IoU with the labels
         gt_boxes_image_domain = [o.boxes for o in gt_objects]
-        matching_anchor_idxs, matching_gt_idxs = (
-            BoxUtils.find_indices_of_high_iou_anchors(
-                anchors, gt_boxes_image_domain, matching_iou_threshold
-            )
+        matching_anchor_idxs, matching_gt_idxs = BoxUtils.find_anchor_gt_pairs(
+            anchors, gt_boxes_image_domain, matching_iou_threshold
+        )
+
+        # Determine which anchor boxes have an IoU with GT boxes below the lower bound
+        background_anchor_idxs = BoxUtils.find_anchors_meeting_iou_condition(
+            anchors, gt_boxes_image_domain, background_iou_threshold, above=False
         )
 
         # Extract the predicted boxes (in regression domain) and class logits
@@ -438,7 +444,7 @@ class SSD(nn.Module, MetaLogger):
         ):
             # Find the predicted boxes in the regression domain
             matched_pred_boxes_regression_domain = image_pred_boxes_regression_domain[
-                image_matching_anchor_idxs
+                image_matching_anchor_idxs, :
             ]
 
             # Since one ground truth box can have multiple anchor boxes associated with
@@ -463,27 +469,50 @@ class SSD(nn.Module, MetaLogger):
         # Calculate the classification loss
         total_num_objects = 0
         gt_classes_list: list[Tensor] = []
-        for (
+        for idx, (
             image_class_logits,
             image_matching_anchor_idxs,
             image_matching_gt_idxs,
             image_gt_objects,
-        ) in zip(
-            pred_class_logits,
-            matching_anchor_idxs,
-            matching_gt_idxs,
-            gt_objects,
-            strict=False,
+            image_background_anchor_idxs,
+        ) in enumerate(
+            zip(
+                pred_class_logits,
+                matching_anchor_idxs,
+                matching_gt_idxs,
+                gt_objects,
+                background_anchor_idxs,
+                strict=False,
+            )
         ):
             # Set the label for each anchor box
+            num_anchors = image_class_logits.shape[0]
             image_gt_classes = torch.zeros(
-                (image_class_logits.shape[0],),
-                device=self.device,
-                dtype=torch.int,
+                (num_anchors,), dtype=torch.int, device=self.device
             )
+
+            # For anchors that match set the class ID - all other anchors are assumed as
+            # background
             image_gt_classes[image_matching_anchor_idxs] = (
                 image_gt_objects.class_ids_with_background[image_matching_gt_idxs]
             )
+
+            # Remove background anchors that have been matched to ground truths
+            mask = ~torch.isin(image_background_anchor_idxs, image_matching_anchor_idxs)
+            image_background_anchor_idxs = image_background_anchor_idxs[mask]
+
+            # Create a mask of the anchor boxes that are not associated with the
+            # background or a class
+            all_idxs = torch.arange(0, num_anchors, dtype=torch.int, device=self.device)
+            taken_idxs = torch.cat(
+                (image_matching_anchor_idxs, image_background_anchor_idxs)
+            )
+            not_taken_mask = ~torch.isin(all_idxs, taken_idxs)
+
+            # Set the non background and non class anchors to 0 class in the preds
+            pred_class_logits[idx, not_taken_mask, 0] = 1
+            pred_class_logits[idx, not_taken_mask, 1:] = 0
+
             total_num_objects += image_gt_objects.class_ids_with_background.numel()
 
             gt_classes_list.append(image_gt_classes)
