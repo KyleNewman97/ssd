@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import Tensor
 from torchvision.ops import box_convert, box_iou, nms
@@ -167,12 +168,22 @@ class BoxUtils:
         return best_anchor_indices
 
     @staticmethod
-    def find_indices_of_high_iou_anchors(
+    def find_anchor_gt_pairs(
         anchors: Tensor, ground_truth_boxes: list[Tensor], iou_threshold: float
     ) -> tuple[list[Tensor], list[Tensor]]:
         """
-        Finds the indices of anchor boxes that have an IoU over the threshold with the
-        ground truth boxes.
+        Finds the indices of anchor boxes that match with GT boxes. There are two
+        conditions in which a match can be made:
+
+            1. An anchor box has an IoU threshold above the specified threshold with an
+                ground truth box.
+            2. An anchor box has the highest IoU with a ground truth box - without this
+                condition many ground truth boxes were getting missed.
+
+        It should be noted that this method of matching does not gaurantee that all
+        ground truth boxes will be associated with an anchor box. Specifically, if
+        ground truth boxes have high overlap then they will compete for anchor boxes and
+        can result in some ground truth boxes not getting an anchor.
 
         Parameters
         ----------
@@ -193,13 +204,13 @@ class BoxUtils:
 
         Returns
         -------
-        matching_anchor_indicies:
-            The indicies of the anchor boxes that match the ground truth boxes. The
+        matching_anchor_indices:
+            The indices of the anchor boxes that match the ground truth boxes. The
             number of elements in the list is `batch_size` with the tensor having shape
             `(num_matching,)`.
 
-        matching_gt_indicies:
-            The indicies of the ground truth boxes that correspond to the matched anchor
+        matching_gt_indices:
+            The indices of the ground truth boxes that correspond to the matched anchor
             boxes. We need this because a single ground truth box can have multiple
             matching anchor boxes.
         """
@@ -211,28 +222,43 @@ class BoxUtils:
             )
 
         # Determine which anchor boxes have the highest IoU with the labels
-        matching_anchor_indicies: list[Tensor] = []
-        matching_gt_indicies: list[Tensor] = []
+        matching_anchor_indices: list[Tensor] = []
+        matching_gt_indices: list[Tensor] = []
         batch_size = len(ground_truth_boxes)
         for idx in range(batch_size):
             # Calculate anchor box IoU
             image_anchors = anchors[idx, ...]
-            image_ground_truth_boxes = ground_truth_boxes[idx]
+            image_gt_boxes = ground_truth_boxes[idx]
             image_anchors_xyxy = box_convert(image_anchors, "cxcywh", "xyxy")
-            image_gt_xyxy = box_convert(image_ground_truth_boxes, "cxcywh", "xyxy")
+            image_gt_xyxy = box_convert(image_gt_boxes, "cxcywh", "xyxy")
             iou_matrix = box_iou(image_anchors_xyxy, image_gt_xyxy)
 
-            # Find which anchor box best fits the label
-            max_ious, gt_indicies = iou_matrix.max(dim=1)
-            anchor_indicies_above_threshold = (
-                (max_ious > iou_threshold).nonzero().squeeze()
+            device = iou_matrix.device
+
+            # Find the anchor boxes above the IoU threshold with GT boxes
+            max_ious, gt_indices = iou_matrix.max(dim=1)
+            anchor_idxs_thresh = (max_ious > iou_threshold).nonzero().squeeze(dim=1)
+            gt_idxs_thresh = gt_indices[anchor_idxs_thresh]
+
+            # Find anchor boxes that best match each GT box
+            anchor_idxs_best = iou_matrix.max(dim=0).indices
+            gt_idxs_best = torch.arange(
+                0, image_gt_boxes.shape[0], dtype=torch.int, device=device
             )
-            gt_indicies_above_threshold = gt_indicies[anchor_indicies_above_threshold]
 
-            matching_anchor_indicies.append(anchor_indicies_above_threshold)
-            matching_gt_indicies.append(gt_indicies_above_threshold)
+            # Concat the two approaches
+            anchor_idxs_all = torch.cat((anchor_idxs_best, anchor_idxs_thresh))
+            gt_idxs_all = torch.cat((gt_idxs_best, gt_idxs_thresh))
 
-        return matching_anchor_indicies, matching_gt_indicies
+            # Find the first occurence of each anchor box
+            _, first_idxs = np.unique(anchor_idxs_all.cpu().numpy(), return_index=True)
+            anchor_idxs = anchor_idxs_all[first_idxs]
+            gt_idxs = gt_idxs_all[first_idxs]
+
+            matching_anchor_indices.append(anchor_idxs)
+            matching_gt_indices.append(gt_idxs)
+
+        return matching_anchor_indices, matching_gt_indices
 
     @staticmethod
     def nms(
