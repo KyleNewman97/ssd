@@ -28,7 +28,7 @@ class TrainConfig(BaseModel):
     weight_decay: float = Field(default=5e-4)
 
     # Loss parameters
-    box_loss_scaling_factor: float = Field(default=120)
+    box_loss_scaling_factor: float = Field(default=20)
 
     # Dataset parameters
     num_classes: int

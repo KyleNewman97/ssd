@@ -510,8 +510,8 @@ class SSD(nn.Module, MetaLogger):
             not_taken_mask = ~torch.isin(all_idxs, taken_idxs)
 
             # Set the non background and non class anchors to 0 class in the preds
-            pred_class_logits[idx, not_taken_mask, 0] = 1
-            pred_class_logits[idx, not_taken_mask, 1:] = 0
+            pred_class_logits[idx, not_taken_mask, 0] = 0
+            pred_class_logits[idx, not_taken_mask, 1:] = -torch.inf
 
             total_num_objects += image_gt_objects.class_ids_with_background.numel()
 

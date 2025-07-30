@@ -31,9 +31,17 @@ lint:
     - trufflehog@3.90.1
     - yamllint@1.37.1
 actions:
+  definitions:
+    - id: notebook-format-pre-commit
+      display_name: Notebook format
+      description: Clears all notebooks
+      run: .trunk/hooks/notebook_format.sh
+      triggers:
+        - git_hooks: [pre-commit]
   enabled:
     - git-lfs
     - trunk-announce
     - trunk-check-pre-push
     - trunk-fmt-pre-commit
     - trunk-upgrade-available
+    - notebook-format-pre-commit
