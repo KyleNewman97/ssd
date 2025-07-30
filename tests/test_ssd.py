@@ -5,6 +5,7 @@ import torch
 
 from ssd import SSD
 from ssd.anchor_box_generator import AnchorBoxGenerator
+from ssd.structs import FrameLabels
 
 
 class TestSSD:
@@ -72,3 +73,29 @@ class TestSSD:
             assert frame_detections.class_ids.shape == (num_top_k,)
 
             assert frame_detections.scores.min() > confidence_threshold
+
+    def test_compute_loss(self):
+        # Initialise the model
+        num_classes = 2
+        dtype = torch.float32
+        device = torch.device("cpu")
+        model = SSD(num_classes, device)
+
+        # Initialise dummy inputs
+        batch_size = 1
+        feature_map_sizes = [(38, 38), (19, 19), (10, 10), (5, 5), (3, 3), (1, 1)]
+        head_outputs = torch.rand(
+            (batch_size, 8732, 4 + 1 + num_classes), device=device
+        )
+        anchors = AnchorBoxGenerator(device).forward(batch_size, feature_map_sizes)
+        gt_objects = [
+            FrameLabels(
+                boxes=torch.tensor([[0.1, 0.1, 0.1, 0.1]], dtype=dtype, device=device),
+                class_ids_with_background=torch.tensor(
+                    [1], dtype=torch.int, device=device
+                ),
+            )
+        ]
+
+        # Try to post-process the detections
+        model._compute_loss(head_outputs, anchors, gt_objects, 0.3, 0.05, 1)

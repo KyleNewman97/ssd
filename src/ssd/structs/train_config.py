@@ -7,10 +7,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class TrainConfig(BaseModel):
     num_epochs: int
-    anchor_iou_threshold: float = Field(
-        default=0.1,
+    anchor_match_iou_threshold: float = Field(
+        default=0.3,
         description=(
             "The IoU threshold at which an anchor is considered to match a GT box."
+        ),
+    )
+    anchor_background_iou_threshold: float = Field(
+        default=0.05,
+        description=(
+            "The IoU threshold below which anchors are assigned the background class."
         ),
     )
 
@@ -22,7 +28,7 @@ class TrainConfig(BaseModel):
     weight_decay: float = Field(default=5e-4)
 
     # Loss parameters
-    box_loss_scaling_factor: float = Field(default=6)
+    box_loss_scaling_factor: float = Field(default=20)
 
     # Dataset parameters
     num_classes: int
