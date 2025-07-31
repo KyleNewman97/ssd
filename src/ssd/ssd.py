@@ -13,7 +13,7 @@ from torchvision.transforms.functional import pil_to_tensor
 from tqdm import tqdm
 
 from ssd.anchor_box_generator import AnchorBoxGenerator
-from ssd.data import DataAugmenter, LetterboxTransform, SSDDataset
+from ssd.data import LetterboxTransform, SSDDataset
 from ssd.ssd_backbone import SSDBackbone
 from ssd.structs import FrameDetections, FrameLabels, Losses, TrainConfig
 from ssd.utils import (
@@ -132,7 +132,7 @@ class SSD(nn.Module, MetaLogger):
         # Run over the training dataset
         best_val_loss = np.inf
         train_losses: list[Losses] = []
-        num_train_losses = 4
+        num_train_losses = 100
         for epoch in range(config.num_epochs):
             self.logger.info(f"Epoch: {epoch}")
 
@@ -308,9 +308,6 @@ class SSD(nn.Module, MetaLogger):
             config.image_width, config.image_height, config.dtype
         )
 
-        # Create training data augmenter
-        augmenter = DataAugmenter(config.image_width, config.image_height)
-
         # Create the collate function
         collate_func = partial(TrainUtils.batch_collate_func, device=self.device)
 
@@ -320,7 +317,7 @@ class SSD(nn.Module, MetaLogger):
             config.train_labels_dir,
             config.num_classes,
             transform,
-            augmenter,
+            None,
             self.device,
             config.dtype,
         )
@@ -410,10 +407,8 @@ class SSD(nn.Module, MetaLogger):
 
         # Determine which anchor boxes have the highest IoU with the labels
         gt_boxes_image_domain = [o.boxes for o in gt_objects]
-        matching_anchor_idxs, matching_gt_idxs = (
-            BoxUtils.find_indices_of_high_iou_anchors(
-                anchors, gt_boxes_image_domain, matching_iou_threshold
-            )
+        matching_anchor_idxs, matching_gt_idxs = BoxUtils.find_anchor_gt_pairs(
+            anchors, gt_boxes_image_domain, matching_iou_threshold
         )
 
         # Extract the predicted boxes (in regression domain) and class logits
@@ -438,7 +433,7 @@ class SSD(nn.Module, MetaLogger):
         ):
             # Find the predicted boxes in the regression domain
             matched_pred_boxes_regression_domain = image_pred_boxes_regression_domain[
-                image_matching_anchor_idxs
+                image_matching_anchor_idxs, :
             ]
 
             # Since one ground truth box can have multiple anchor boxes associated with

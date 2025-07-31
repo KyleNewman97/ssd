@@ -30,4 +30,9 @@ build-backend = "pdm.backend"
 distribution = true
 
 [dependency-groups]
-dev = ["pytest>=8.4.1", "notebook>=7.4.3", "pytest-mock>=3.14.1"]
+dev = [
+  "pytest>=8.4.1",
+  "notebook>=7.4.3",
+  "pytest-mock>=3.14.1",
+  "fiftyone>=1.7.1",
+]
